@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 13 - News Topic Classifier</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 13 - News Topic Classification</h1>
+
+        <h2>Project Overview</h2>
+        <p>This is the library's deep-dive into classic NLP: classify a headline
+        into one of four topics (sport / tech / weather / finance). Unlike
+        Tutorial 7's two-class sentiment model, here you build the whole
+        pipeline - vocabulary, token ids, padding - over a larger generated
+        corpus, and then train <strong>two competing architectures</strong> on
+        identical data to see where each wins.</p>
+
+        <h2>Synthetic Corpus</h2>
+        <p>The seeded generator (seed 42) produces 1,600 headlines by shuffling
+        2&ndash;4 topic keywords among 3&ndash;6 neutral filler words:</p>
+        <table>
+            <tr><th>Topic (label)</th><th>Keyword examples</th></tr>
+            <tr><td>sport (0)</td><td>goal, striker, league, cup, penalty, stadium...</td></tr>
+            <tr><td>tech (1)</td><td>chip, startup, cloud, quantum, algorithm, server...</td></tr>
+            <tr><td>weather (2)</td><td>storm, heatwave, blizzard, humidity, floods...</td></tr>
+            <tr><td>finance (3)</td><td>stocks, inflation, earnings, merger, currency...</td></tr>
+        </table>
+        <pre>"small local cup tournament stadium new"</pre>
+        <p>Fillers (<em>the, city, officials, warns, week...</em>) carry no
+        topic signal, so the models must learn which words matter - exactly
+        what embeddings are for.</p>
+
+        <h2>NLP Pipeline Done Right</h2>
+        <ol>
+            <li><strong>Seeded split first:</strong>
+                <code>Datasets.trainTestSplit(1600, 0.2, 7L)</code> &rarr;
+                1,280 train / 320 test (train size is a multiple of batch 32).</li>
+            <li><strong>Vocabulary from TRAIN tokens only.</strong> Building the
+                word-to-id map on all text would let test-set words shape the
+                encoding - a subtle leak. Unseen test words become
+                <code>&lt;UNK&gt;</code>.</li>
+            <li><strong>Encode to fixed length T=10:</strong> ids 0 = UNK,
+                1 = PAD, real words from 2 up, sorted by descending frequency;
+                truncate or right-pad every headline.</li>
+        </ol>
+        <pre>"small local cup tournament stadium new"
+   -> [5,17,58,40,50,12,1,1,1,1]</pre>
+
+        <h2>Two Architectures, One Dataset</h2>
+        <p>A key constraint of this library shapes the design: the
+        <code>Embedding</code> layer outputs a flattened
+        <code>[T*embDim]</code> vector per sentence, so it feeds
+        <strong>Dense heads</strong>; recurrent layers instead read raw
+        <code>[batch, T, D]</code> flows - so they take
+        <strong>one-hot token planes</strong> (<code>D = vocabSize</code>).</p>
+        <table>
+            <tr><th></th><th>Model A - Embedding bag-of-words</th><th>Model B - order-aware LSTM</th></tr>
+            <tr><td>Input</td><td><code>Input3D(T,1)</code>, token ids as floats</td>
+                <td><code>Input3D(T,V)</code>, one-hot planes (T&times;V floats)</td></tr>
+            <tr><td>Body</td><td><code>Embedding(V,16) &rarr; Dense(32) &rarr; ReLU &rarr; Dropout(0.2)</code></td>
+                <td><code>LSTM(24) &rarr; Dense(32) &rarr; ReLU</code></td></tr>
+            <tr><td>Word order?</td><td>ignored (bag-of-words)</td><td>read step by step</td></tr>
+            <tr><td>Cost</td><td>very cheap</td><td>T&times; more compute + unrolled BPTT</td></tr>
+        </table>
+        <pre>// Model A
+try (Sequential net = new Sequential(Optimizer.adam(0.01f), 42L,
+        new Input3D(T, 1),
+        new Embedding(vocabSize, 16),
+        new Dense(32), new ReLU(),
+        new Dropout(0.2f),
+        new Dense(4))) { ... }
+
+// Model B
+try (Sequential net = new Sequential(Optimizer.adam(0.01f), 43L,
+        new Input3D(T, vocabSize),
+        new LSTM(24),
+        new Dense(32), new ReLU(),
+        new Dense(4))) { ... }</pre>
+        <p>Both train with <code>EarlyStopping.valLoss(20, true)</code> and
+        seeded shuffling. In the default run Model A stops itself at epoch
+        51/150 while the LSTM uses its full budget - the embedding baseline
+        converges faster on this much vocabulary repetition.</p>
+
+        <h2>Evaluation</h2>
+        <p>With disjoint keyword vocabularies the task is linearly separable,
+        so both reach perfect held-out accuracy (supports 71/86/70/93):</p>
+        <pre>Confusion matrix (rows = true label, columns = predicted):
+             0     1     2     3
+  0         71     0     0     0
+  1          0    86     0     0
+  2          0     0    70     0
+  3          0     0     0    93
+
+Test accuracy: embedding-bag 1.000 | lstm 1.000</pre>
+        <p>The interesting comparison is <em>cost at equal quality</em>: when a
+        cheap bag-of-words matches the recurrent model, ship the cheap one.
+        The LSTM earns its keep once word order or shared words start to matter
+        - see the exercises.</p>
+
+        <h2>Demo Predictions on New Headlines</h2>
+        <pre>"the striker scored a goal after the storm delay"
+  -> sport
+"a startup says its quantum algorithm beats big cloud servers"
+  -> tech
+"heatwave warnings as humidity and winds rise all week"
+  -> weather
+"traders dump shares as inflation hits the bank earnings"
+  -> finance</pre>
+        <p>Note the first headline mixes a weather word into a sport sentence -
+        the models still land on the majority topic because keyword evidence
+        dominates fillers.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\news-topic-classifier&gt; run.cmd
+rem or with a custom epoch budget:
+run.cmd 40</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Add ambiguous shared keywords ("market" in finance AND tech,
+                "match" in sport AND tech) - does the gap between bag-of-words
+                and LSTM appear?</li>
+            <li>Swap <code>LSTM(24)</code> for <code>GRU(24)</code> -
+                compare epochs-to-converge and accuracy.</li>
+            <li>Cut the training set to 200 headlines - which architecture
+                degrades faster, and why?</li>
+            <li>Reduce T to 5 (truncate harder) - how much information can you
+                lose before accuracy drops?</li>
+            <li>Try to stack <code>Embedding &rarr; LSTM</code>. Read the
+                Embedding javadoc first: why is it impossible with the current
+                layer, and what would a sequence-preserving Embedding need to
+                return?</li>
+            <li>Negation compositionality: add examples where
+                "<em>not X</em>" flips meaning. Can either architecture learn
+                the flip from a handful of cases?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="autoencoder-small-images.html">&larr; Autoencoder Small Images</a></span>
+            <span>Next: <a href="char-lm-text-generator.html">Character-Level Language Model &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

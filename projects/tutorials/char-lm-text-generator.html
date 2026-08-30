@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 14 - Character-Level Language Model</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 14 - Character-Level Language Model</h1>
+
+        <h2>Project Overview</h2>
+        <p>This project trains the library's first <strong>generative</strong>
+        model: a tiny character-level language model. It reads a window of 16
+        characters and predicts which character comes next - a plain
+        classification problem whose side effect is text generation: after
+        training you feed a seed, sample the predicted distribution, append the
+        sampled character and repeat. The model then writes new headline-like
+        text, one character at a time.</p>
+
+        <h2>Corpus and Windows</h2>
+        <p>A seeded generator produces 1,200 headline-style lines from a mixed
+        keyword/filler vocabulary - 42,551 characters over a 29-symbol alphabet
+        (letters, space, period, newline). The corpus is chopped into sliding
+        windows:</p>
+        <pre>window (T=16 chars): "the blizzard.he"
+label (next char):   'a'</pre>
+        <ul>
+            <li>stride 4 between windows keeps the dataset overlapping but
+                diverse: 10,560 windows total</li>
+            <li>seeded <code>Datasets.trainTestSplit(w, 0.2, 7L)</code>; the
+                train half is trimmed to an exact multiple of batch 128 -
+                8,448 train / 2,112 test windows</li>
+            <li>characters enter as one-hot planes:
+                <code>Input3D(16, 29)</code></li>
+        </ul>
+
+        <h2>The Model</h2>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.01f), 42L,
+        new Input3D(T, v),          // 16 one-hot characters
+        new LSTM(48),               // reads the window left to right
+        new Dense(v))) {            // next-char logits over 29 symbols
+
+    net.setShuffleSeed(42L);
+    EarlyStopping es = EarlyStopping.valLoss(8, true);
+    net.fit(trainX, trainY, epochs, 128, testX, testY, true, es);
+}</pre>
+        <p>Note what this really is: an ordinary classifier whose classes are
+        <em>characters</em>. Nothing about the model is special - the magic is
+        in how the dataset is sliced and how predictions are consumed.</p>
+
+        <h2>Evaluation</h2>
+        <pre>ran 13/40 epochs - best val loss 0.9818 at epoch 5
+next-char accuracy: 0.6671</pre>
+        <p>67% may look low until you remember how unpredictable text is: given
+        <code>"the blizzard.he"</code>, many continuations are legal. The
+        structure the model DID learn is visible in what it writes - word-like
+        chunks, real vocabulary, periods and line breaks in the right places.
+        Early stopping fires at epoch 13 because the validation curve flattens
+        quickly on a templated corpus.</p>
+
+        <h2>Generation (The Payoff)</h2>
+        <p>Sampling uses temperature: weights
+        <code>p<sub>c</sub><sup>1/temp</sup></code> are renormalized and a
+        character is drawn. temp &lt; 1 sharpens toward the argmax, temp &gt; 1
+        gets creative. At temp 0.8 the seeded model continues
+        <code>"the blizzard.he"</code> with:</p>
+        <pre>"the blizzard.heatwave coach.
+storm the.bin warns.earnings."</pre>
+        <p>Sentence boundaries, word shapes and topic words all emerge from 16
+        characters of context - no grammar rules, just statistics learned by
+        the LSTM.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\char-lm-text-generator&gt; run.cmd
+rem or with a custom epoch budget:
+run.cmd 8</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Raise temperature to 1.3 and to 0.3 - characterize the output
+                of each extreme.</li>
+            <li>Increase T to 32 - does longer context improve coherence or
+                just training time?</li>
+            <li>Swap <code>LSTM(48)</code> for <code>GRU(48)</code> - compare
+                next-char accuracy per epoch of training.</li>
+            <li>Generate from a nonsense seed like
+                <code>"zzz qqq xxx "</code> - how does the model recover?</li>
+            <li>Add a second corpus (e.g. the translator's Kavish lines) and
+                check whether the model can imitate either style.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="news-topic-classifier.html">&larr; News Topic Classifier</a></span>
+            <span>Next: <a href="sequence-transducer.html">Sequence Transducer &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

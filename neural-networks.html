@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html" class="active">Neural Networks</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Neural Networks with TensorFlow C API Java</h1>
+        
+        <p>This page covers building neural networks using the tensorflow-capi-java library, from simple feedforward networks to CNNs and RNNs.</p>
+        
+        <h2>1. Network Architecture Types</h2>
+        
+        <h3>1.1. Feedforward Neural Networks (MLP)</h3>
+        <p>Multi-Layer Perceptrons (MLPs) are the simplest type of neural network, with fully connected layers where each neuron connects to all neurons in the previous and subsequent layers.</p>
+        <pre><code>// Simple MLP for tabular data
+try (Sequential net = new Sequential(new Adam(0.001f),
+        new Input(784),           // 784 input features (e.g., flattened 28x28 image)
+        new Dense(128), new ReLU(),
+        new Dense(64), new ReLU(),
+        new Dense(10), new Softmax())) {
+    // Train on features and labels...
+}</code></pre>
+        
+        <h3>1.2. Convolutional Neural Networks (CNN)</h3>
+        <p>CNNs are specialized for grid-like data (images, time-series) using convolutional layers that preserve spatial hierarchies.</p>
+        <pre><code>// CNN for image classification (Fashion-MNIST / MNIST example)
+try (Sequential net = new Sequential(new Adam(0.001f),
+        new Input4D(28, 28, 1),   // 28x28 grayscale image
+        new Conv2D(16, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Conv2D(32, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Flatten(),            // Flatten 3D feature maps to 1D vector
+        new Dense(128), new ReLU(),
+        new Dropout(0.25f),       // Regularization
+        new Dense(10), new Softmax())) {
+    // Train on image data...
+}</code></pre>
+        
+        <h3>1.3. Recurrent Neural Networks (RNN)</h3>
+        <p>RNNs process sequential data by maintaining a hidden state that captures information from previous time steps.</p>
+        <pre><code>
+// RNN for sequence data
+try (Sequential net = new Sequential(new Adam(0.001f),
+        new Input1D(100),         // 100 time steps (variable input size possible)
+        new RNN(128),             // RNN layer with 128 hidden units
+        new Dense(10), new Softmax())) {
+    // Process sequences...
+</code></pre>
+        
+        <h3>1.4. Long Short-Term Memory (LSTM)</h3>
+        <p>LSTMs are a special kind of RNN built around an explicit
+        <strong>long-term memory</strong>: a cell state that runs through the
+        whole sequence carrying important information for many steps - hundreds
+        of tokens if needed - while gates <em>forget</em> whatever stops
+        mattering. A plain RNN overwrites its entire memory every step and
+        forgets almost immediately; an LSTM <em>decides</em>, per step, what to
+        keep for the long run, what to write in, and what to reveal right
+        now:</p>
+        <ul>
+            <li><strong>Forget gate</strong> - erases memory that is no longer
+                relevant ("the previous sentence's filler words").</li>
+            <li><strong>Input gate</strong> - writes new important information
+                into long-term memory ("the subject mentioned 20 steps ago").</li>
+            <li><strong>Output gate</strong> - exposes only what is useful for
+                the current prediction.</li>
+        </ul>
+        <p>This is what "capable of learning long-term dependencies" means in
+        practice: because memory is carried additively instead of being
+        rewritten, gradients survive across long spans and the network can
+        connect, say, a forecasting signal from weeks ago to today's value.
+        Full gate equations and usage:
+        <a href="nlp.html#lstm">NLP &rarr; The Recurrent Family</a>.</p>
+        <pre><code>
+// LSTM for sequence modeling
+try (Sequential net = new Sequential(new Adam(0.001f),
+        new Input1D(100),
+        new LSTM(128),            // 128 LSTM memory cells
+        new Dense(10), new Softmax())) {
+    // LSTM processes sequences with memory...
+</code></pre>
+        
+        <h3>1.5. Gated Recurrent Unit (GRU)</h3>
+        <p>GRUs are a simplified LSTM variant with fewer parameters, also capable of learning long-term dependencies.</p>
+        <pre><code>
+// GRU for sequence modeling (lighter than LSTM)
+try (Sequential net = new Sequential(new Adam(0.001f),
+        new Input1D(100),
+        new GRU(128),
+        new Dense(10), new Softmax())) {
+    // GRU processes sequences with reset/update gates...
+</code></pre>
+        
+        <h3>1.6. Which Architecture for Which Project?</h3>
+        <p>The type of input data decides the architecture - match the network
+        to your data's shape:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Architecture</th>
+                <th style="padding: 8px;">Use when your data is...</th>
+                <th style="padding: 8px;">Typical tasks</th>
+                <th style="padding: 8px;">Showcase project</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><strong>MLP</strong><br>(Input + Dense)</td>
+                <td style="padding: 8px;">A fixed row of numbers per example
+                    (tabular/spreadsheet data)</td>
+                <td style="padding: 8px;">Price prediction, risk scoring,
+                    medical measurements, churn &amp; fraud flags</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/house-price-regressor.html">house-price-regressor</a>,
+                    <a href="projects/tutorials/wine-quality.html">wine-quality</a>,
+                    <a href="projects/tutorials/churn-prediction.html">churn-prediction</a>,
+                    <a href="projects/tutorials/fraud-detection.html">fraud-detection</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><strong>CNN</strong><br>(Conv2D + Pool)</td>
+                <td style="padding: 8px;">A grid where nearby positions are
+                    related: images, spectrograms, sensor matrices</td>
+                <td style="padding: 8px;">Image classification, visual defect
+                    detection, denoising/autoencoding</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/mnist-digit-cnn.html">mnist-digit-cnn</a>,
+                    <a href="projects/tutorials/fashion-mnist-cnn.html">fashion-mnist-cnn</a>,
+                    <a href="projects/tutorials/autoencoder-small-images.html">autoencoder-small-images</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><strong>RNN</strong></td>
+                <td style="padding: 8px;">Sequences where only recent context
+                    matters and simplicity wins</td>
+                <td style="padding: 8px;">Short-pattern sequence tagging,
+                    teaching/demos of recurrence</td>
+                <td style="padding: 8px;">(superseded by LSTM/GRU for real work)</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><strong>LSTM</strong></td>
+                <td style="padding: 8px;">Sequences with long-range dependencies:
+                    time series, sentences, logs</td>
+                <td style="padding: 8px;">Forecasting, sentiment analysis,
+                    anomaly-in-time detection</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/airline-lstm.html">airline-lstm</a>,
+                    <a href="projects/tutorials/sentiment-analyzer.html">sentiment-analyzer</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><strong>GRU</strong></td>
+                <td style="padding: 8px;">Same as LSTM, but you want fewer
+                    parameters and faster training on modest data</td>
+                <td style="padding: 8px;">Same tasks as LSTM; try GRU first on
+                    small datasets, LSTM if quality lags</td>
+                <td style="padding: 8px;">drop-in alternative in
+                    <a href="projects/tutorials/airline-lstm.html">airline-lstm</a></td>
+            </tr>
+        </table>
+        <ul>
+            <li><strong>Numbers in columns?</strong> Start with an MLP - it is
+                the baseline every other architecture must beat.</li>
+            <li><strong>Pixels or grids?</strong> CNN - weight sharing exploits
+                spatial structure that Dense layers ignore.</li>
+            <li><strong>Order matters (time, words)?</strong> Recurrent nets -
+                LSTM/GRU carry memory across steps.</li>
+            <li>Combine freely: an <code>Embedding</code> +
+                <code>LSTM</code> + <code>Dense</code> stack handles text;
+                <code>Conv2D</code> features feeding <code>Dense</code> heads
+                handle vision.</li>
+        </ul>
+        
+        <h2>2. Layer Types Available</h2>
+        
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Layer Type</th>
+                <th style="padding: 8px;">Dimensions</th>
+                <th style="padding: 8px;">Use Case</th>
+                <th style="padding: 8px;">Example</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Input / Input4D</td>
+                <td style="padding: 8px;">Define input shape</td>
+                <td style="padding: 8px;">Start of every model</td>
+                <code>new Input4D(28, 28, 1)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Dense (Fully-connected)</td>
+                <td style="padding: 8px;">Any (1D input, outputs N units)</td>
+                <td style="padding: 8px;">Classification/regression head</td>
+                <code>new Dense(10)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Conv2D</td>
+                <td style="padding: 8px;">4D NHWC (batch, H, W, C)</td>
+                <td style="padding: 8px;">Feature extraction from images</td>
+                <code>new Conv2D(32, 3, 3, 1, 1, Padding.SAME)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Conv3D</td>
+                <td style="padding: 8px;">5D (batch, D, H, W, C)</td>
+                <td style="padding: 8px;">3D volumes (voxels, video)</td>
+                <code>new Conv3D(...)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">MaxPool2D / AvgPool2D</td>
+                <td style="padding: 8px;">4D NHWC</td>
+                <td style="padding: 8px;">Downsampling, spatial reduction</td>
+                <code>new MaxPool2D(2, 2, 2, 2, Padding.VALID)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Flatten</td>
+                <td style="padding: 8px;">Any → 1D</td>
+                <td style="padding: 8px;">Transition from conv to dense</td>
+                <code>new Flatten()</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Dropout</td>
+                <td style="padding: 8px;">Same as input</td>
+                <td style="padding: 8px;">Regularization (prevent overfitting)</td>
+                <code>new Dropout(0.5f)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Residual (skip connection)</td>
+                <td style="padding: 8px;">Same shape</td>
+                <td style="padding: 8px;">Enable ResNet-style training</td>
+                <code>new Residual(blockLayers)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8;">Reshape</td>
+                <td style="padding: 8px;">Any → new shape</td>
+                <td style="padding: 8px;">Transition between dimensions</td>
+                <code>new Reshape(512)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Embedding</td>
+                <td style="padding: 8px;">(num_tokens, embeddingDim)</td>
+                <td style="padding: 8px;">NLP, discrete input mapping</td>
+                <code>new Embedding(10000, 64)</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">GlobalAveragePooling</td>
+                <td style="padding: 8px;">4D NHWC → 1D</td>
+                <td style="padding: 8px;">Reduce spatial dimensions, keep channels</td>
+                <code>new GlobalAveragePooling()</code></td>
+            </tr>
+        </table>
+        
+        <h2>3. Building a CNN Step-by-Step</h2>
+        
+        <h3>3.1. Input Layer</h3>
+        <pre><code>// For 28x28 grayscale images (Fashion-MNIST / MNIST)
+new Input4D(28, 28, 1)</code></pre>
+        <p>The <code>Input4D</code> layer declares that each sample is a 28×28 image with 1 channel (grayscale). The dimensions are (height, width, channels) in NHWC format.</p>
+        
+        <h3>3.2. Convolutional Layers</h3>
+        <pre><code>// First conv layer: 16 filters, 3x3 kernel, stride 1, SAME padding
+new Conv2D(16, 3, 3, 1, 1, Padding.SAME)</code></pre>
+        <p>Parameters:</p>
+        <ul>
+            <li><strong>filters:</strong> Number of output channels (feature maps)</li>
+            <li><strong>kernelH, kernelW:</strong> Height and width of the convolution kernel</li>
+            <li><strong>strideH, strideW:</strong> Vertical and horizontal stride</li>
+            <li><strong>padding:</strong> SAME (output size = input size) or VALID (no padding)</li>
+        </ul>
+        
+        <h3>3.3. Pooling Layers</h3>
+        <pre><code>// Max pooling: 2x2 pool, stride 2, VALID padding
+new MaxPool2D(2, 2, 2, 2, Padding.VALID)</code></pre>
+        <p>Reduces spatial dimensions by the pool size, assuming no overlap (stride = pool size).</p>
+        
+        <h3>3.3. Transition to Dense Layers</h3>
+        <pre><code>// After convolutional layers, flatten the feature maps
+new Flatten()</code></pre>
+        <p>Flattens the 3D output (height × width × channels) into a 1D vector for the fully-connected layers.</p>
+        
+        <h3>3.4. Regularization</h3>
+        <pre><code>// Dropout: randomly zero out 25% of activations during training
+new Dropout(0.25f)</code></pre>
+        <p>During training, each neuron has a 25% chance of being zeroed out, which prevents co-adaptation of features.</p>
+        
+        <h3>3.5. Output Layer</h3>
+        <pre><code>
+// Multi-class classification with 10 classes
+new Dense(10), new Softmax()</code></pre>
+        <p>The <code>Dense(10)</code> layer produces 10 logits (one per class), and <code>Softmax</code> converts them to probabilities summing to 1.</p>
+        
+        <h2>4. RNN/LSTM/GRU Details</h2>
+        
+        <h3>4.1. Input Format</h3>
+        <pre><code>
+// For sequences of length 100 with 1 feature per time step
+new Input1D(100);  // or new Input3D(100, 1, features) depending on layout</code></pre>
+        
+        <h3>4.2. LSTM Internal Structure</h3>
+        <p>LSTMs have three gates:</p>
+        <ul>
+            <li><strong>Forget gate:</strong> Decides what information to throw away from the cell state</li>
+            <li><strong>Input gate:</strong> Decides which information to store in the cell state</li>
+            <li><strong>Output gate:</strong> Decides what the hidden state should be</li>
+        </ul>
+        <p>Each gate uses a sigmoid activation to output values between 0 and 1.</p>
+        
+        <h3>4.3. Training RNNs</h3>
+        <ul>
+            <li>RNNs are sensitive to vanishing/exploding gradients</li>
+            <li>Use <code>Adam</code> optimizer for faster convergence</li>
+            <li>Gradient clipping can help with exploding gradients</li>
+            <li>Teacher forcing (using ground-truth as input) during training</li>
+        </ul>
+        
+        <h2>5. Network Initialization</h2>
+        <p>All weights in tensorflow-capi-java use <strong>Glorot uniform (Xavier) initialization</strong> by default:</p>
+        <pre><code>// Weights are initialized with uniform distribution
+// Fan-in / fan-out based limit: limit = sqrt(6 / (fan_in + fan_out))
+// This helps keep gradients in a reasonable range during backpropagation</code></pre>
+        
+        <h2>5. Model Saving and Loading</h2>
+        <pre><code>
+// Save architecture + weights to disk
+net.saveTo(Path.of("my_cnn.bin"));
+
+// Load from checkpoint
+Sequential loaded = Sequential.loadFrom(Path.of("my_cnn.bin"), optimizer);
+
+// Or with custom learning rate
+Sequential loaded = Sequential.loadFrom(Path.of("my_cnn.bin"), new Adam(0.001f));</code></pre>
+        <p>Checkpoint format stores:</p>
+        <ul>
+            <li>Architecture spec (layer types and parameters)</li>
+            <li>All trainable parameter values</li>
+            <li>Loss type and smoothing (v2 format)</li>
+        </ul>
+        
+        <h2>6. Training with fit()</h2>
+        <pre><code>
+// Train for 10 epochs, batch size 128, with validation split
+History history = net.fit(
+    trainX, trainY,      // training data
+    10,                  // epochs
+    128,                 // batch size
+    testX, testY,        // validation data (or null)
+    true                 // verbose: print per-epoch summary
+);
+
+// History object contains:
+history.trainLoss;     // per-epoch training loss
+history.valLoss;       // per-epoch validation loss (if validation provided)
+history.valAcc;        // per-epoch validation accuracy (if validation provided)</code></pre>
+        
+        <h2>7. Summary</h2>
+        <ul>
+            <li>Start with <code>Sequential</code> + <code>Input4D</code> for image models</li>
+            <li>Stack <code>Conv2D</code> + <code>ReLU</code> + <code>MaxPool2D</code> blocks</li>
+            <li>Transition with <code>Flatten</code> → <code>Dense</code> layers</li>
+            <li>Use <code>Dropout</code> for regularization</li>
+            <li>Output with <code>Dense(classes)</code> + <code>Softmax</code></li>
+            <li>Train with <code>net.fit()</code> using <code>Adam(0.001)</code></li>
+            <li>Evaluate with <code>Metrics.printReport()</code></li>
+            <li>Save/load with <code>saveTo/loadFrom</code></li>
+        </ul>
+    </div>
+</div>
+</body>
+</html>

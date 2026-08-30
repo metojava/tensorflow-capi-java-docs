@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regressor - Continuous Targets</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="regressor.html" class="active">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Regressor - Predicting Continuous Targets</h1>
+
+        <p><code>Regressor</code> is the Keras-style regression twin of
+        <code>Sequential</code>. Architecturally it uses the same composable
+        layer set, but the label placeholder is a float tensor, the training
+        objective is <strong>mean squared error (MSE)</strong>, and
+        <code>predict()</code> returns raw network outputs - no softmax.</p>
+
+        <h2>1. Minimal Example</h2>
+        <pre><code>try (Regressor net = new Regressor(Optimizer.adam(0.01f), 42L,
+        new Input(4),
+        new Dense(24), new ReLU(),
+        new Dense(1))) {
+
+    net.setShuffleSeed(42L);                       // reproducible epoch shuffling
+    Regressor.RegressionHistory h =
+            net.fit(trainX, trainY, 200, 32, testX, testY, true);
+
+    float[] preds = net.predict(testX);            // one float per output unit
+    double mse = net.mse(testX, testY);
+    net.saveTo(Path.of("model.bin"));
+}</code></pre>
+        <p>Targets (<code>trainY</code>/<code>testY</code>) are flat float arrays:
+        one value per row for scalar regression, or
+        <code>rows &times; outputs</code> values laid out row-major for
+        multi-output regression. This is what makes <code>Regressor</code>
+        perfect for targets that are not class ids - prices, temperatures,
+        pixel intensities (see the
+        <a href="projects/tutorials/autoencoder-small-images.html">autoencoder
+        project</a>, which regresses whole images).</p>
+
+        <h2>2. Construction Rules</h2>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Rule</th>
+                <th style="padding: 8px;">Detail</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">First layer</td>
+                <td style="padding: 8px;">Must be <code>Input</code>,
+                    <code>Input3D</code> or <code>Input4D</code></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Last layer</td>
+                <td style="padding: 8px;">Must be <code>Dense(units)</code> -
+                    <code>units</code> becomes the number of regression outputs.
+                    Use <code>Dense(1)</code> for scalar targets.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">No activation on the output</td>
+                <td style="padding: 8px;">Predictions are unbounded linear
+                    outputs. Do not put <code>ReLU</code>/<code>Sigmoid</code>
+                    after the final <code>Dense</code> unless your targets are
+                    genuinely bounded.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Seeded constructor</td>
+                <td style="padding: 8px;"><code>new Regressor(optimizer, seed,
+                    layers...)</code> fixes Glorot weight initialization;
+                    combine with <code>setShuffleSeed()</code> for fully
+                    reproducible runs.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">AutoCloseable</td>
+                <td style="padding: 8px;">Always wrap in try-with-resources to
+                    release the native graph and optimizer state.</td>
+            </tr>
+        </table>
+
+        <h2>3. Loss and Training Loop</h2>
+        <p>The training op is <code>loss = mean((pred - y)<sup>2</sup>)</code>.
+        Gradients come from TensorFlow's native <code>TF_AddGradients</code>,
+        exactly as in <code>Sequential</code>. The full-loop signature:</p>
+        <pre><code>// Without early stopping
+RegressionHistory fit(float[] trainX, float[] trainY,
+                      int epochs, int batchSize,
+                      float[] valX, float[] valY, boolean verbose);
+
+// With EarlyStopping (monitors validation loss)
+RegressionHistory fit(float[] trainX, float[] trainY,
+                      int epochs, int batchSize,
+                      float[] valX, float[] valY, boolean verbose,
+                      EarlyStopping es);</code></pre>
+        <p>The returned <code>RegressionHistory</code> records per-epoch curves:</p>
+        <pre><code>h.trainLoss[i]      // mean MSE on the training set for epoch i
+h.valLoss[i]        // mean MSE on the validation set (NaN if no val data)
+h.epochsRun()       // epochs actually executed (&lt; requested if early stop fired)
+h.finalTrainLoss();
+h.finalValLoss();</code></pre>
+
+        <h2>4. Prediction and Evaluation</h2>
+        <pre><code>float[] preds = net.predict(batchX);   // rows * outputs raw floats
+float mse     = net.mse(x, y);         // convenience: MSE over a whole set
+
+// Derived metrics you typically compute yourself:
+double rmse = Math.sqrt(mse);
+// MAE and R^2 from preds vs targets:</code></pre>
+        <pre><code>double mae = 0, ssRes = 0, ssTot = 0;
+double yBar = mean(trainY);
+for (int i = 0; i &lt; testN; i++) {
+    double e = preds[i] - testY[i];
+    mae += Math.abs(e);
+    ssRes += e * e;
+    ssTot += (testY[i] - yBar) * (testY[i] - yBar);
+}
+mae /= testN;
+double r2 = 1 - ssRes / ssTot;</code></pre>
+        <ul>
+            <li><strong>MSE / RMSE</strong>: quadratic loss; RMSE is in target
+                units (dollars, degrees...).</li>
+            <li><strong>MAE</strong>: robust summary - less sensitive to outlier
+                errors than RMSE.</li>
+            <li><strong>R&sup2;</strong>: fraction of target variance explained;
+                1.0 is perfect, 0.0 equals predicting the mean.</li>
+        </ul>
+
+        <h2>5. Regression-Specific Tips</h2>
+        <ul>
+            <li><strong>Standardize features</strong> with
+                <a href="datasets.html">Datasets.fitStandardizer</a> fitted on
+                the training split only - unstandardized wide-range inputs make
+                gradient descent take wildly mismatched steps per weight.</li>
+            <li><strong>Consider standardizing the target too.</strong> If prices
+                span 50k..600k, training on z-scored targets converges much
+                faster; multiply predictions by <code>std + mean</code>
+                afterwards.</li>
+            <li><strong>Prefer Adam</strong> at 0.01..0.001 and let
+                <a href="training.html#earlystopping">EarlyStopping</a> find the
+                stopping point instead of hand-tuning epochs.</li>
+            <li><strong>Beware heteroscedastic noise:</strong> MSE fits the mean.
+                If outliers dominate, try predicting the log of the target.</li>
+        </ul>
+
+        <h2>6. Checkpoints</h2>
+        <pre><code>// Save architecture spec + weights ("TFRG" format, version 1)
+net.saveTo(Path.of("regressor.bin"));
+
+// Restore; pass an optimizer (state is fresh, weights come from the file)
+Regressor loaded = Regressor.loadFrom(Path.of("regressor.bin"),
+                                      Optimizer.adam(0.01f));</code></pre>
+        <p>All model-level features work identically on <code>Regressor</code>:
+        LR schedules (<code>setLrSchedule</code>), gradient clipping and weight
+        decay (on the optimizer), layer freezing (<code>setTrainable</code>) -
+        see <a href="training.html">Training Features</a>.</p>
+
+        <h2>7. Summary</h2>
+        <ul>
+            <li><code>Regressor</code> = <code>Sequential</code> with float
+                labels + MSE loss + linear outputs</li>
+            <li>Last layer must be <code>Dense(outputs)</code>; start with
+                <code>Input</code>/Input3D/<code>Input4D</code></li>
+            <li>Targets are flat floats: <code>rows * outputs</code></li>
+            <li>Evaluate with <code>mse()</code>, then derive RMSE/MAE/R&sup2;</li>
+            <li>Full showcase: <a href="projects/tutorials/house-price-regressor.html">house-price-regressor project</a></li>
+        </ul>
+    </div>
+</div>
+</body>
+</html>

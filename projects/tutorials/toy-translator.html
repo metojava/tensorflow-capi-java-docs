@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 16 - Toy Translator</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 16 - Toy Machine Translation</h1>
+
+        <h2>Project Overview</h2>
+        <p>The flagship NLP demo of the library: translate sentences from an
+        English-like language into an invented second language ("Kavish").
+        Real machine translation needs attention and huge corpora, but its
+        <strong>core skill</strong> - lexical substitution plus word-order
+        transformation - is fully learnable here. Kavish uses a completely
+        different lexicon AND reads back-to-front:</p>
+        <pre>EN : mouse slowly sees wolf
+KV : nusu veni loma velu          (object, verb, adverb, subject)</pre>
+
+        <h2>Parallel Corpus</h2>
+        <p>1,600 seeded sentence pairs over a 20-symbol vocabulary shared by
+        both languages (8 nouns used as subjects/objects, 6 verbs, 6
+        adverbs):</p>
+        <table>
+            <tr><th></th><th>Slot order</th><th>Example</th></tr>
+            <tr><td>English-like</td><td>SUBJ &rarr; ADV &rarr; VERB &rarr;
+                OBJ</td><td>mouse slowly sees wolf</td></tr>
+            <tr><td>Kavish</td><td>OBJ &rarr; VERB &rarr; ADV &rarr;
+                SUBJ</td><td>nusu(=wolf) veni(=sees) loma(=slowly)
+                velu(=mouse)</td></tr>
+        </table>
+        <p>Every source word has exactly one Kavish counterpart, so translation
+        = dictionary lookup + full reordering. Split 1,280 train / 320 test via
+        <code>Datasets.trainTestSplit(n, 0.2, 7L)</code>; unseen test pairs are
+        novel word combinations, not memorized sentences.</p>
+
+        <h2>The Model</h2>
+        <pre>try (Regressor net = new Regressor(Optimizer.adam(0.01f), 42L,
+        new Input3D(T, V),          // T=4 one-hot source words, V=20 symbols
+        new LSTM(64),               // encoder: reads the English sentence
+        new Dense(T * V))) {        // decoder head: 4 Kavish words at once
+
+    net.setShuffleSeed(42L);
+    EarlyStopping es = EarlyStopping.valLoss(15, true);
+    net.fit(trainX, trainY, epochs, 32, testX, testY, true, es);
+}</pre>
+        <ul>
+            <li>Targets are flattened float one-hot planes of the Kavish
+                sentence - that's why training goes through
+                <code>Regressor</code>, not a classifier.</li>
+            <li>Decoding = argmax per block of V outputs, then mapping ids to
+                Kavish words for display.</li>
+            <li>Both languages share one id space here (nouns 0..7, adverbs
+                8..13, verbs 14..19) which keeps the plumbing simple.</li>
+        </ul>
+
+        <h2>Evaluation</h2>
+        <pre>Early stopping at epoch 32 - best val_loss 0.00001 at epoch 17
+ran 32/150 epochs - best val MSE 0.000011 at epoch 17
+word accuracy      : 1.0000
+exact translations : 1.0000 (320/320)</pre>
+        <p>Perfect held-out accuracy with early stopping at epoch 32: the
+        task decomposes into lookup + reversal, exactly what this architecture
+        absorbs easily (compare Tutorial 15, where sorting's global comparisons
+        were far harder than reversing).</p>
+
+        <h2>Demo Translations (Unseen Sentences)</h2>
+        <pre>EN : mouse slowly sees wolf
+gold: velu veni loma nusu
+pred: velu veni loma nusu
+
+EN : bear again fears owl
+gold: oru fala keli brak
+pred: oru fala keli brak</pre>
+        <p>Every prediction matches the gold Kavish translation symbol for
+        symbol - including the mirrored word order - and the third example
+        translates a subject-object pair never seen in that combination during
+        training.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\toy-translator&gt; run.cmd
+rem or with a custom epoch budget:
+run.cmd 40</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Add adjectives to both languages (extra slot in English,
+                post-noun particle in Kavish) - at what corpus size does exact
+                accuracy drop below 99%?</li>
+            <li>Make 10% of pairs use a different order rule (S-V-O instead of
+                O-V-S) without marking which - can one model serve both?</li>
+            <li>Increase the noun pool to 30 words - how does V=30 change
+                convergence epochs?</li>
+            <li>Translate INTO English instead (swap src/tgt arrays) - identical
+                difficulty? Should be; verify.</li>
+            <li>Remove the LSTM and feed the same data to a pure Dense network -
+                measure how much harder reordering becomes without recurrence.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="sequence-transducer.html">&larr; Sequence Transducer</a></span>
+            <span>Next: <a href="attention-vs-lstm.html">Attention vs LSTM &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

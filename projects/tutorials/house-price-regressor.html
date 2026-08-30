@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 11 - House Price Regressor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 11 - House Price Regression</h1>
+
+        <h2>Project Overview</h2>
+        <p>Where Tutorial 3 bucketed houses into cheap/medium/expensive bands,
+        this project predicts the <strong>exact sale price</strong>. That is
+        regression proper: a continuous target, a mean-squared-error objective
+        and error metrics expressed in dollars. It is also a tour of the
+        library's training controls - seeded reproducibility, a cosine learning
+        schedule, decoupled weight decay, gradient clipping and
+        <code>EarlyStopping</code> deciding when to stop.</p>
+
+        <h2>Synthetic Dataset</h2>
+        <p>The seeded generator (seed 42) creates 1,600 houses with six
+        features and a ground-truth pricing formula:</p>
+        <table>
+            <tr><th>Feature</th><th>Range</th><th>Effect on price</th></tr>
+            <tr><td>sqft</td><td>500..3500</td><td>+120 per sqft</td></tr>
+            <tr><td>bedrooms</td><td>1..6</td><td>+8,000 each</td></tr>
+            <tr><td>age</td><td>0..80</td><td>-900 per year</td></tr>
+            <tr><td>locationScore</td><td>1..10</td><td>+15,000 per point</td></tr>
+            <tr><td>garageSpaces</td><td>0..3</td><td>+12,000 each</td></tr>
+            <tr><td>distanceToCenter</td><td>0.5..30 km</td><td>-2,500 per km</td></tr>
+        </table>
+        <pre>price = 120*sqft + 8000*bedrooms - 900*age + 15000*location
+      + 12000*garage - 2500*distance + 8*sqft*location
+      + noise(N(0, 25000))
+price = max(price, 50000);   // clip unrealistic lows</pre>
+        <p>The new ingredient versus Tutorial 3 is the
+        <strong>interaction term</strong> <code>8*sqft*location</code>: a square
+        foot is worth far more in premium districts. A linear model cannot
+        represent that product; the MLP learns it implicitly through its hidden
+        layers, which is exactly the kind of structure regression networks are
+        for.</p>
+
+        <h2>Pipeline</h2>
+        <ol>
+            <li>Generate 1,600 rows with seed 42.</li>
+            <li><code>Datasets.trainTestSplit(1600, 0.3, 42L)</code>, then
+                materialize both splits with
+                <code>Datasets.gatherRows/gatherFloats</code>
+                (1,120 train / 480 test).</li>
+            <li>Standardize the six features with train-split statistics only
+                (<code>fitStandardizer</code> +
+                <code>applyStandardizer</code>).</li>
+            <li>Standardize the target too: fit z-score parameters of the train
+                prices and transform both splits. The network then learns
+                prices as unit-less residuals, which converges much faster than
+                raw dollars.</li>
+        </ol>
+        <pre>// after training, predictions come back to dollars:
+double pred = predZ[i] * yStd + yMean;</pre>
+        <p>The split sizes are deliberately multiples of the batch size (32) so
+        every training batch is full - the trainer feeds pre-packed batch
+        buffers and expects uniform shapes.</p>
+
+        <h2>Model and Regularized Optimizer</h2>
+        <pre>Optimizer opt = Optimizer.adam(0.01f);
+opt.setWeightDecay(1e-4f);     // decoupled (AdamW-style) decay
+opt.setGradClipNorm(5f);       // safety net against gradient spikes
+
+try (Regressor net = new Regressor(opt, SEED,
+        new Input(6),
+        new Dense(64), new ReLU(),
+        new Dense(32), new ReLU(),
+        new Dense(1))) {
+
+    net.setShuffleSeed(SEED);
+    net.setLrSchedule(LrSchedule.cosine(epochs, 0.01f));
+
+    EarlyStopping es = EarlyStopping.valLoss(25, true);
+    Regressor.RegressionHistory h =
+            net.fit(trainX, trainY, epochs, 32, testX, testY, true, es);
+}</pre>
+        <p>Notes on each control:</p>
+        <ul>
+            <li><strong>Seeds everywhere:</strong> seed 42 fixes weight init
+                (constructor) and batch order
+                (<code>setShuffleSeed</code>) - reruns are identical.</li>
+            <li><strong>Cosine schedule:</strong> the effective rate glides
+                from 100% down to 1% of 0.01 across the requested epochs -
+                big steps early, fine adjustments late.</li>
+            <li><strong>Weight decay</strong> pulls weights toward zero each
+                step; harmless here, valuable when datasets get smaller.</li>
+            <li><strong>Gradient clipping</strong> at global norm 5 costs
+                nothing normally but caps any pathological batch.</li>
+        </ul>
+
+        <h2>Early Stopping in Action</h2>
+        <p><code>EarlyStopping.valLoss(25, true)</code> watches validation MSE
+        and stops after 25 epochs without improvement, restoring the best
+        weights seen. In the default run it fires at epoch 59:</p>
+        <pre>Epoch 33/300 - loss: 0.01820 - val_loss: 0.02806
+Epoch 34/300 - loss: 0.02008 - val_loss: 0.02277   &lt;- best
+Epoch 35/300 - loss: 0.01788 - val_loss: 0.02836
+...
+Epoch 57/300 - loss: 0.01649 - val_loss: 0.02291
+Epoch 58/300 - loss: 0.01852 - val_loss: 0.02757
+Epoch 59/300 - loss: 0.01836 - val_loss: 0.02358
+Early stopping at epoch 59 - best val_loss 0.02277 at epoch 34
+Ran 59/300 epochs - best val MSE 0.02277 at epoch 34</pre>
+        <p>We budgeted 300 epochs; the callback returned 241 of them. Because
+        <code>restoreBestWeights=true</code>, the saved model is the best one
+        seen, not the overtrained final one.</p>
+
+        <h2>Evaluation</h2>
+        <p>Predictions are de-standardized back to dollars before scoring.
+        Expected result:</p>
+        <pre>RMSE $26,755 | MAE $21,538 | R^2 0.975
+
+     actual      predicted
+ 1) $  409,497  $  415,319
+ 2) $  482,890  $  477,756
+ 3) $  209,739  $  220,401
+ 4) $  194,539  $  190,124
+ 5) $  330,013  $  334,775
+ 6) $  226,358  $  217,541</pre>
+        <p>The injected pricing noise has &sigma; = $25,000, so an RMSE of
+        ~$27k means the model has learned essentially everything learnable -
+        the residual is the noise itself. R&sup2; = 0.974 says 97.4% of test
+        price variance is explained. Compare Tutorial 3's classifier: same
+        market, coarser question, easier task.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\house-price-regressor&gt; run.cmd
+rem or with a custom epoch budget:
+run.cmd 150</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Increase the noise &sigma; to 50,000 - watch RMSE track it
+                while R&sup2; stays high. Which metric tells the truer
+                story?</li>
+            <li>Delete the interaction term from the generator and retrain:
+                how much easier does the task get?</li>
+            <li>Remove target standardization (train on raw dollars) and
+                compare epochs-to-converge.</li>
+            <li>Set <code>patience</code> to 3 - does stopping too early cost
+                accuracy? Then try 100 - does it ever help?</li>
+            <li>Skip <code>opt.setGradClipNorm</code> and raise the base LR to
+                0.1 until training diverges; reinstate clipping and observe the
+                rescue.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="churn-prediction.html">&larr; Churn Prediction</a></span>
+            <span>Next: <a href="autoencoder-small-images.html">Autoencoder Small Images &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 9 - Fraud Detection</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 9 - Credit Card Fraud Detection</h1>
+
+        <h2>Project Overview</h2>
+        <p>Detect fraudulent card transactions from five behavioral features.
+        The dataset is generated in code (seeded, fully reproducible) so you can
+        study the one thing real fraud data always has and toy datasets never
+        show properly: <strong>extreme class imbalance</strong> - here only ~3%
+        of transactions are fraud. This tutorial is a deep dive into why plain
+        accuracy lies in that regime and which numbers to read instead.</p>
+
+        <h2>Synthetic Data Generation</h2>
+        <p>With <code>new Random(7)</code> we draw 6,000 legitimate transactions
+        and only 180 fraudulent ones:</p>
+        <table>
+            <tr><th>Feature</th><th>Normal</th><th>Fraud</th></tr>
+            <tr><td>amount</td><td>log-normal, median ~$40</td><td>&times;5..&times;20 multiplier (big-ticket)</td></tr>
+            <tr><td>hour of day</td><td>daytime-weighted |N|&middot;6 + 8 h</td><td>night hours 22..05 only</td></tr>
+            <tr><td>distanceFromHome</td><td>|N(0,1)|</td><td>&times;3 (far away)</td></tr>
+            <tr><td>online purchase</td><td>15%</td><td>70% (card-not-present)</td></tr>
+            <tr><td>ratioToMedianPrice</td><td>N(1, 0.2)</td><td>N(1, 0.2)</td></tr>
+        </table>
+        <pre>static double lognormalAmount(Random r, double scale) {
+    return Math.max(2.0,
+            Math.exp(Math.log(40) + r.nextGaussian() * 0.75) * scale);
+}</pre>
+        <p>Rows are then seeded-shuffled and split 70/30 (4,326 / 1,854), and all
+        five features are z-score standardized with <em>training-set</em>
+        statistics. Note the deliberate overlap: a few frauds look perfectly
+        normal (small daytime purchases near home), which is exactly what makes
+        the metrics interesting.</p>
+
+        <h2>Model Architecture</h2>
+        <pre>Input(5)
+Dense(32)  ReLU
+BatchNorm1D()          <- keeps activations centered; helps rare positives
+Dense(16)  ReLU
+Dense(2)               <- LAST layer must be Dense(numClasses)</pre>
+        <p>Trained with Adam(0.005), sparse softmax cross-entropy over integer
+        labels, 120 epochs at batch size 64:</p>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.005f),
+        new Input(5),
+        new Dense(32), new ReLU(),
+        new BatchNorm1D(),
+        new Dense(16), new ReLU(),
+        new Dense(2))) {
+    net.fit(trainX, trainY, 120, 64, testX, testY, true);
+}</pre>
+
+        <h2>Why Raw Accuracy Misleads</h2>
+        <p>The majority class baseline is the number to beat <em>only</em> if you
+        care about accuracy:</p>
+        <pre>"Always predict normal" -> 96.98% accuracy ... and ZERO frauds caught.</pre>
+        <p>A model that scores 99.78% accuracy can still miss money. So after
+        <code>Metrics.printReport</code> the project computes fraud precision and
+        recall explicitly from the 2&times;2 confusion matrix
+        (<code>conf[true][predicted]</code>):</p>
+        <ul>
+            <li><strong>Fraud recall</strong> = TP / (TP + FN) - share of actual
+                frauds we catch. Every miss is direct financial loss.</li>
+            <li><strong>Fraud precision</strong> = TP / (TP + FP) - share of
+                alarms that are real. Every false alarm costs an analyst review
+                or an angry customer.</li>
+            <li><strong>F1</strong> balances the two when no business cost matrix
+                is available.</li>
+        </ul>
+        <p>Typical run at the default arg-max threshold (P(fraud) &ge; 0.50):</p>
+        <pre>fraud recall=0.93 precision=1.00 f1=0.96 (missed=4, false alarms=0)</pre>
+
+        <h2>Threshold Shifting</h2>
+        <p>The arg-max cut-off is arbitrary. Because the output is a calibrated
+        probability we can move the decision threshold and slide along the
+        precision/recall frontier:</p>
+        <pre>threshold P(fraud)&gt;=0.50 -> recall=0.93 precision=1.00
+threshold P(fraud)&gt;=0.35 -> recall=0.93 precision=1.00
+threshold P(fraud)&gt;=0.20 -> recall=0.93 precision=0.98  (+false alarm)</pre>
+        <p>The program also prints the score separation - lowest P(fraud) among
+        real frauds vs highest among normals. Here the four missed frauds score
+        essentially 0: they are genuinely normal-looking transactions, and no
+        threshold can rescue them. That is the honest lesson: <strong>lowering
+        the threshold buys recall from borderline cases only</strong>; deeply
+        ambiguous rows need better features, not a different cut-off. In
+        production you would pick the threshold on a validation set according to
+        the cost ratio of missed fraud vs false alarm.</p>
+
+        <h2>Evaluation Output</h2>
+        <pre>Accuracy:        0.9978
+Confusion matrix (rows = true label):
+             0     1
+  0       1798     0
+  1          4    52
+Per-class metrics:
+  class         precision    recall        f1  support
+  normal           0.9978    1.0000    0.9989     1798
+  fraud            1.0000    0.9286    0.9630       56</pre>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\fraud-detection&gt; run.cmd</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically). Full runtime about
+        one minute.</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Drop fraud count to 60 (1%) and re-run - watch recall degrade
+                before precision does. Why?</li>
+            <li>Remove <code>BatchNorm1D()</code> and compare the val-loss curve.</li>
+            <li>Add class weights by duplicating fraud rows in the training set
+                (naive oversampling) - what happens to precision?</li>
+            <li>Compute the F-beta score (&beta;=2, weighting recall higher) for
+                each threshold in the sweep.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Prev: <a href="airline-lstm.html">&larr; Airline Passengers LSTM</a></span>
+            <span>Next: <a href="churn-prediction.html">Churn Prediction &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

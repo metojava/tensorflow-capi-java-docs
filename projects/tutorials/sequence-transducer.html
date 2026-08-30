@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 15 - Sequence Transducer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 15 - Sequence Transducer (Reverse &amp; Sort)</h1>
+
+        <h2>Project Overview</h2>
+        <p>This is the full encoder&ndash;decoder showcase promised by the
+        <a href="../../nlp.html#encoderdecoder">NLP page's Pattern A</a>: one
+        model reads a digit sequence and writes out a TRANSFORMED sequence.
+        Better still, it performs two different tasks - selected by a control
+        token in the first input position:</p>
+        <pre>[REV, 5,7,1,9,2,9] -> [REV, 9,2,9,1,7,5]   // reverse
+[SRT, 3,3,7,8,7,6] -> [SRT, 3,3,6,7,7,8]   // sort ascending</pre>
+        <p>The model is never told the rule - it must infer both transformations
+        from paired examples and use the control token to decide which one to
+        apply.</p>
+
+        <h2>Data Layout</h2>
+        <table>
+            <tr><th>Property</th><th>Value</th></tr>
+            <tr><td>Alphabet V</td><td>12 symbols: digits 0..9, REV=10,
+                SORT=11</td></tr>
+            <tr><td>Sequence T</td><td>7 = 1 control token + 6 payload
+                digits</td></tr>
+            <tr><td>Pairs</td><td>1,600 seeded pairs (772 reverse / 823
+                sort), split 1,280 / 320 via
+                <code>Datasets.trainTestSplit</code></td></tr>
+            <tr><td>Encoding</td><td>one-hot planes per position -
+                each sample is a <code>7&times;12</code> float matrix</td></tr>
+            <tr><td>Targets</td><td>same layout for the transformed sequence -
+                flat float planes (that's why the trainer is a
+                <a href="../../regressor.html">Regressor</a>)</td></tr>
+        </table>
+
+        <h2>The Model</h2>
+        <pre>try (Regressor net = new Regressor(Optimizer.adam(0.01f), 42L,
+        new Input3D(T, V),
+        new LSTM(96),               // encoder: reads task token + digits
+        new Dense(T * V))) {        // decoder head: all positions at once
+
+    net.setShuffleSeed(42L);
+    EarlyStopping es = EarlyStopping.valLoss(25, true);
+    net.fit(trainX, trainY, epochs, 32, testX, testY, true, es);
+}</pre>
+        <p>Decoding simply takes the argmax of each consecutive block of V
+        outputs. There is no feedback loop: every output position is produced
+        from the encoded input alone.</p>
+
+        <h2>Evaluation</h2>
+        <pre>ran 250/250 epochs - best val MSE 0.003934 at epoch 246
+digit accuracy : 0.9911
+exact REVERSE  : 1.0000 (156/156)
+exact SORT     : 0.9146 (150/164)
+
+REVERSE input=[REV,5,7,1,9,2,9] target=9 2 9 1 7 5 predicted=9 2 9 1 7 5
+SORT    input=[SRT,3,3,7,8,7,6] target=3 3 6 7 7 8 predicted=3 3 6 7 7 8</pre>
+        <p>The contrast between tasks is the lesson: <strong>reversal is a
+        positional mapping</strong> - output position t always copies input
+        position 6-t, which an LSTM memorizes perfectly. <strong>Sorting is a
+        global rearrangement</strong> - every output depends on comparing ALL
+        inputs, so it converges slower and plateaus around 91% exact sequences
+        (99% of individual digits are still placed correctly). Task conditioning
+        works cleanly: zero cross-talk between REV and SRT in the confusion.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\sequence-transducer&gt; run.cmd
+rem or with a custom epoch budget:
+run.cmd 120</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Add a third control token, e.g. DEDUP that removes repeated
+                digits - does the shared encoder still handle three
+                behaviors?</li>
+            <li>Increase payload length back to 8 and retrain - how far does
+                SORT accuracy fall while REVERSE stays perfect?</li>
+            <li>Remove the control token and train separate models per task;
+                compare total parameters and accuracy against the shared
+                conditioned model.</li>
+            <li>Raise <code>LSTM(96)</code> to <code>LSTM(128)</code> - how
+                much does SORT benefit?</li>
+            <li>Feed a REV example whose payload happens to be sorted already -
+                can you catch the model "copying" instead of transforming?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="char-lm-text-generator.html">&larr; Character-Level Language Model</a></span>
+            <span>Next: <a href="toy-translator.html">Toy Translator &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

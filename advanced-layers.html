@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Layers - BatchNorm2D, Upsample2D</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html" class="active">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Advanced Layers</h1>
+
+        <p>Two specialized layers complement the basic set from the
+        <a href="neural-networks.html">Neural Networks</a> page:
+        <code>BatchNorm2D</code> stabilizes convolutional network training and
+        <code>Upsample2D</code> rebuilds spatial resolution in decoders.</p>
+
+        <h2 id="batchnorm2d">1. BatchNorm2D - Batch Normalization for Convolutions</h2>
+
+        <h3>1.1 What it does</h3>
+        <p><code>BatchNorm2D</code> normalizes 4-D NCHW flows
+        <code>[batch, C, H, W]</code>: one mean/variance pair per channel,
+        computed over the batch and both spatial axes. Each channel is then
+        scaled and shifted by a learnable gamma/beta pair:</p>
+        <pre><code>xhat = (x - mu) * rsqrt(var + eps)      // eps = 1e-5
+out  = gamma * xhat + beta              // gamma init 1, beta init 0</code></pre>
+
+        <h3>1.2 Training vs inference statistics</h3>
+        <ul>
+            <li><strong>During training</strong>, per-batch statistics are
+                computed on the fly and fed into the graph as auxiliary
+                placeholders; running averages are updated Java-side with
+                momentum 0.9:
+                <code>running = 0.9 * running + 0.1 * batch</code>.</li>
+            <li><strong>During inference</strong> (<code>predict()</code>,
+                <code>setTraining(false)</code>), the stored running averages
+                are fed instead, so predictions do not depend on batch
+                composition.</li>
+            <li>This mirrors Keras behavior but keeps all statistics in Java -
+                the native graph only sees placeholder feeds.</li>
+        </ul>
+
+        <h3>1.3 Usage</h3>
+        <pre><code>// Insert directly after a Conv2D / DepthwiseConv2D layer,
+// BEFORE the activation function:
+try (Sequential net = new Sequential(Optimizer.adam(0.01f), 5L,
+        new Input4D(28, 28, 1),
+        new Conv2D(16, 3, 3, 1, 1, Padding.SAME),
+        new BatchNorm2D(), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Conv2D(32, 3, 3, 1, 1, Padding.SAME),
+        new BatchNorm2D(), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Flatten(),
+        new Dense(128), new ReLU(),
+        new Dense(10))) {
+    net.fit(trainX, trainY, 15, 128, testX, testY, true);
+}</code></pre>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Property</th>
+                <th style="padding: 8px;">Value / behavior</th>
+            </tr>
+            <tr><td style="padding: 8px;">Input rank</td>
+                <td style="padding: 8px;">4-D (<code>[batch, C, H, W]</code>);
+                    throws otherwise</td></tr>
+            <tr><td style="padding: 8px;">Parameters</td>
+                <td style="padding: 8px;"><code>gamma[C]</code> (init ones),
+                    <code>beta[C]</code> (init zeros) - both trainable</td></tr>
+            <tr><td style="padding: 8px;">Statistics axes</td>
+                <td style="padding: 8px;">batch &times; H &times; W per
+                    channel</td></tr>
+            <tr><td style="padding: 8px;">Epsilon</td>
+                <td style="padding: 8px;">1e-5 inside rsqrt</td></tr>
+            <tr><td style="padding: 8px;">Running momentum</td>
+                <td style="padding: 8px;">0.9 (Java-side exponential average)</td></tr>
+            <tr><td style="padding: 8px;">1-D sibling</td>
+                <td style="padding: 8px;"><code>BatchNorm1D</code> for dense
+                    flows - same scheme, one mean/var per unit</td></tr>
+        </table>
+
+        <h3>1.4 Why bother?</h3>
+        <ul>
+            <li>Keeps activations centered through deep stacks so later layers
+                see stable distributions - faster, steadier convergence.</li>
+            <li>Reduces sensitivity to initialization scale.</li>
+            <li>Mild regularization effect: each batch's noise in the
+                normalization statistics.</li>
+        </ul>
+
+        <h2 id="upsample2d">2. Upsample2D - Nearest-Neighbor Upscaling</h2>
+
+        <h3>2.1 What it does</h3>
+        <p><code>Upsample2D(scale)</code> increases the spatial resolution of NCHW
+        flows by nearest-neighbor replication: every input pixel becomes a
+        <code>scale &times; scale</code> block.
+        <code>[B, C, H, W] -&gt; [B, C, scale*H, scale*W]</code>. It contains no
+        learnable parameters - it is the decoder-side twin of
+        <code>MaxPool2D</code>.</p>
+        <pre><code>new Conv2D(8, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+new Upsample2D(2),                       // [B,C,H,W] -&gt; [B,C,2H,2W]
+new Conv2D(1, 3, 3, 1, 1, Padding.SAME)</code></pre>
+
+        <h3>2.2 Implementation notes</h3>
+        <ul>
+            <li>Built on TensorFlow's <code>ResizeNearestNeighbor</code>. TF
+                resize ops are channels-last, so the layer wraps the op with
+                NCHW&rarr;NHWC and NHWC&rarr;NCHW transposes internally -
+                you always declare NCHW shapes at the layer level.</li>
+            <li>The resize op has gradients registered, so end-to-end backprop
+                through upsampling works - no transposed-convolution needed.</li>
+            <li><code>scale</code> must be &gt; 1;
+                <code>Upsample2D(2)</code> covers most decoder designs.</li>
+        </ul>
+
+        <h3>2.3 Typical decoder block</h3>
+        <pre><code>// Encoder (contracting):              // Decoder (expanding):
+new Conv2D(8, 3, 3, 1, 1, SAME), ReLU,  ...   new Upsample2D(2),
+new MaxPool2D(2,2,2,2,VALID),                 new Conv2D(4, 3, 3, 1, 1, SAME), ReLU,
+new Conv2D(16, 3, 3, 1, 1, SAME), ReLU,       new Upsample2D(2),
+new MaxPool2D(2,2,2,2,VALID)                  new Conv2D(1, 3, 3, 1, 1, SAME)</code></pre>
+        <p>Each pool halves H/W in the encoder; each upsample restores it in
+        the decoder. Mirroring pools with upsamples keeps skip-connection
+        designs (U-Net style) shape-aligned. For a complete walkthrough of
+        encoder/decoder thinking on small images, see the
+        <a href="projects/tutorials/autoencoder-small-images.html">autoencoder-small-images</a>
+        project, which pairs this contracting/expanding idea with a latent
+        bottleneck trained end-to-end via MSE.</p>
+
+        <h2 id="selfattention">3. SelfAttention - Scaled Dot-Product Attention</h2>
+
+        <h3>3.1 What it does</h3>
+        <p><code>SelfAttention()</code> lets every position of a sequence look
+        at every other position. For a rank-3 flow
+        <code>[batch, T, D]</code> it computes:</p>
+        <pre><code>scores  = Q&middot;K&#7481; / &radic;D        [B, T, T]
+weights = softmax(scores)     each row sums to 1
+output  = weights&middot;V + x      residual, shape preserved [B, T, D]</pre>
+        <p>where Q = x&middot;Wq, K = x&middot;Wk and V = x&middot;Wv are
+        trainable <code>[D,D]</code> projections (Glorot-uniform). The weight
+        matrix row i says how much position i should attend to every other
+        position - long-range dependencies become one hop instead of a chain
+        of recurrences.</p>
+        <pre><code>try (Sequential net = new Sequential(Optimizer.adam(0.01f), 7L,
+        new Input3D(T, D),          // one-hot planes or raw features
+        new SelfAttention(),        // stackable - deepen pairwise mixing
+        new SelfAttention(),
+        new LSTM(48),               // recurrent layers still flatten after
+        new Dense(classes))) { ... }</code></pre>
+
+        <h3>3.2 Implementation notes</h3>
+        <ul>
+            <li>Built from gradient-registered kernels only:
+                <code>Transpose</code> &rarr; <code>BatchMatMulV2</code>
+                (broadcasts the <code>[D,D]</code> projections over the batch)
+                &rarr; <code>Softmax</code> &rarr; <code>AddV2</code> residual.
+                No native changes.</li>
+            <li>The additive residual keeps the input signal available, so the
+                layer can be stacked and inserted without shrinking the
+                information path.</li>
+            <li>Checkpoint type code 31; save/load round-trips through the
+                standard <code>spec()</code> mechanism (covered by SelfTest).</li>
+            <li>Cross-attention (encoder&rarr;decoder, Transformer-style) does
+                not fit the single-flow <code>Layer</code> interface - assemble
+                that by hand with <a href="graph-builder.html">GraphBuilder</a>.</li>
+        </ul>
+
+        <h2 id="densend">4. DenseND - Position-wise Dense for Any Rank</h2>
+        <p><code>DenseND(units)</code> applies the same linear transform at
+        every position of a flow of ANY rank - typically the sequence flow
+        <code>[B, T, D]</code>:</p>
+        <pre><code>out[b, t, :] = x[b, t, :] &middot; W + b     // shared W across all T positions
+shape: [B,T,D] -&gt; [B,T,units]</code></pre>
+        <p>Unlike <code>Flatten &rarr; Dense</code>, which learns separate
+        weights per position and destroys the T axis, <code>DenseND</code>
+        keeps weights shared (fewer parameters, length-generalizes) and keeps
+        the sequence structure alive for further attention/recurrence. It is
+        the feed-forward sub-layer of Transformer blocks:</p>
+        <pre><code>new Input3D(T, V),
+new SelfAttention(),
+new DenseND(64), new ReLU(),    // position-wise FFN
+new LSTM(48),
+new Dense(classes)</code></pre>
+        <p>Checkpoint type code 32; save/load covered by SelfTest.</p>
+
+        <h2 id="layernorm">4. LayerNorm1D - Feature-Axis Normalization</h2>
+        <pre><code>xhat = (x - mean) * rsqrt(var + eps)   // mean/var over LAST axis,
+out  = gamma &middot; xhat + beta             // per position - not over batch!</code></pre>
+        <p>Unlike <code>BatchNorm1D</code>, statistics depend only on the
+        current sample's own feature vector - identical at train and inference
+        time, no running averages. This is the normalization used inside
+        Transformer blocks:</p>
+        <pre><code>new Input3D(T, D),
+new SelfAttention(),
+new LayerNorm1D(),          // stabilize after attention
+new LSTM(48), ...</code></pre>
+        <p>Caveat worth knowing: because it normalizes per position across
+        features, a position whose D features are all identical gets flattened
+        to zero - place it where relative feature differences carry the
+        signal.</p>
+
+        <h2 id="posenc">5. PositionalEncoding - Order Information for Attention</h2>
+        <pre><code>PE[pos, 2i]   = sin(pos / 10000^(2i/D))
+PE[pos, 2i+1] = cos(pos / 10000^(2i/D))
+out = input + PE                          // [B,T,D], shape preserved</code></pre>
+        <p>Attention is order-blind; this parameter-free layer injects each
+        token's position so pure-attention stacks can distinguish early from
+        late. T and D are fixed at build time, so the sinusoid table is baked
+        into a constant tensor - zero runtime cost.</p>
+        <pre><code>new Input3D(T, V),
+new PositionalEncoding(),
+new SelfAttention(),
+... </code></pre>
+
+        <h2 id="embeddingnd">6. EmbeddingND - Sequence-Preserving Embedding</h2>
+        <pre><code>new Input3D(T, 1),
+new EmbeddingND(vocabSize, 16),   // output: [B, T, 16] - T axis KEPT
+new LSTM(64),                     // ...or SelfAttention, GRU, DenseND...
+new Dense(classes)</code></pre>
+        <p>The original <code>Embedding</code> flattens its output to
+        <code>[B, T*embDim]</code>, which is why it could only ever feed Dense
+        heads. <code>EmbeddingND</code> keeps the time axis, enabling the
+        classic <em>embedding &rarr; recurrent</em> composition for the first
+        time. Same one-hot MatMul realization and input contract as
+        <code>Embedding</code>.</p>
+
+        <h2 id="mha">7. MultiHeadAttention - Parallel Attention Subspaces</h2>
+        <pre><code>new Input3D(T, D),              // D must divide evenly by heads
+new PositionalEncoding(),
+new MultiHeadAttention(4),      // 4 heads of D/4 dimensions each
+new LayerNorm1D(),
+new DenseND(64), new ReLU(),    // feed-forward sub-layer
+new DenseND(D),
+... </code></pre>
+        <p>Each head runs scaled dot-product attention on its own
+        <code>D/heads</code>-dimensional slice of Q/K/V, so different heads can
+        specialize (one might track adjacency, another long-range matches).
+        Head outputs are projected by their slice of <code>WO</code> and
+        summed - mathematically identical to concat-then-project.</p>
+        <ul>
+            <li><strong>Causal variant:</strong>
+                <code>new MultiHeadAttention(heads, true)</code> adds an
+                upper-triangular <code>-1e9</code> mask before softmax so
+                position t attends only to &le; t - decoder-style generation
+                semantics.</li>
+            <li>Implementation note: heads are column slices of shared
+                <code>[D,D]</code> projections; everything stays rank-3 and
+                uses only gradient-registered kernels.</li>
+            <li>Checkpoint type code 36 (heads + causal flag serialized).</li>
+        </ul>
+
+        <h2 id="crossattention">8. CrossAttention - Directed Attention Across Segments</h2>
+        <p>Cross-attention needs TWO flows (queries from one stream, keys/values
+        from another) but <code>Layer.build</code> receives a single flow. The
+        solution: <code>CrossAttention(queryLen)</code> treats the FIRST
+        <code>queryLen</code> positions of the sequence as the query segment
+        and the remainder as key/value material:</p>
+        <pre><code>// input layout: [question segment | document segment]
+// T = questionLen + documentLen symbols, one-hot planes
+new Input3D(questionLen + docLen, V),
+new CrossAttention(questionLen),   // queries read across the boundary
+new LayerNorm1D(),
+new Flatten(),
+new Dense(2)</code></pre>
+        <p>Scores are <code>[B, queryLen, T-queryLen]</code>; output is the
+        updated query segment <code>[B, queryLen, D]</code> with residual.
+        Typical uses: match a short query against a longer context, relate two
+        stacked sentences, retrieval-style classification. Checkpoint type
+        code 37.</p>
+
+        <h2>9. Layer Cheat Sheet</h2>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Layer</th>
+                <th style="padding: 8px;">Params</th>
+                <th style="padding: 8px;">Shape change</th>
+                <th style="padding: 8px;">Typical position</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>BatchNorm2D()</code></td>
+                <td style="padding: 8px;">gamma, beta (per channel)</td>
+                <td style="padding: 8px;">unchanged</td>
+                <td style="padding: 8px;">after conv, before activation</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>BatchNorm1D()</code></td>
+                <td style="padding: 8px;">gamma, beta (per unit)</td>
+                <td style="padding: 8px;">unchanged</td>
+                <td style="padding: 8px;">after Dense, before/after activation</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>Upsample2D(s)</code></td>
+                <td style="padding: 8px;">none</td>
+                <td style="padding: 8px;">H,W &times; s</td>
+                <td style="padding: 8px;">decoder stages between convs</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>SelfAttention()</code></td>
+                <td style="padding: 8px;">Wq, Wk, Wv (D&times;D each)</td>
+                <td style="padding: 8px;">unchanged [B,T,D]</td>
+                <td style="padding: 8px;">before LSTM/Flatten on rank-3 flows</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>DenseND(n)</code></td>
+                <td style="padding: 8px;">W (D&times;n), bias</td>
+                <td style="padding: 8px;">last dim D &rarr; n, rank kept</td>
+                <td style="padding: 8px;">position-wise FFN on sequences</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>LayerNorm1D()</code></td>
+                <td style="padding: 8px;">gamma, beta (per feature)</td>
+                <td style="padding: 8px;">unchanged</td>
+                <td style="padding: 8px;">Transformer-style blocks, attention stacks</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>PositionalEncoding()</code></td>
+                <td style="padding: 8px;">none</td>
+                <td style="padding: 8px;">unchanged</td>
+                <td style="padding: 8px;">before attention on one-hot/feature planes</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>EmbeddingND(v,dim)</code></td>
+                <td style="padding: 8px;">table (vocab&times;dim)</td>
+                <td style="padding: 8px;">[B,T,1] &rarr; [B,T,dim]</td>
+                <td style="padding: 8px;">token sequences feeding RNN/attention</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>MultiHeadAttention(h[, causal])</code></td>
+                <td style="padding: 8px;">Wq/Wk/Wv/WO (D&times;D)</td>
+                <td style="padding: 8px;">unchanged [B,T,D]</td>
+                <td style="padding: 8px;">Transformer encoder/decoder blocks</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>CrossAttention(qLen)</code></td>
+                <td style="padding: 8px;">Wq/Wk/Wv/WO (D&times;D)</td>
+                <td style="padding: 8px;">[B,T,D] &rarr; [B,qLen,D]</td>
+                <td style="padding: 8px;">query-segment vs context matching</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>MaxPool2D(...)</code></td>
+                <td style="padding: 8px;">none</td>
+                <td style="padding: 8px;">H,W reduced</td>
+                <td style="padding: 8px;">encoder stages between convs</td>
+            </tr>
+        </table>
+    </div>
+</div>
+</body>
+</html>

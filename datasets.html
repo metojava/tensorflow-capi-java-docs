@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datasets - Data Loading and Preparation</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html" class="active">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Datasets - Loading, Splitting and Scaling</h1>
+
+        <p><code>Datasets</code> is a utility class of static helpers for the
+        unglamorous half of machine learning: loading CSVs, splitting rows,
+        standardizing features and encoding labels. All methods run once per
+        program (not per batch) and are deliberately simple.</p>
+
+        <h2>1. The Standard Pipeline</h2>
+        <pre><code>// 1. Read a CSV from the classpath ("/data/..") or file system
+List&lt;String[]&gt; rows = Datasets.readCsv("/data/housing.csv", ",");
+
+// 2. Drop the header row and select feature / label columns
+float[] X = Datasets.toFloatFeatures(rows.subList(1, rows.size()), 0, 1, 2);
+float[] Y = Datasets.toFloatColumn(rows.subList(1, rows.size()), 3);
+
+// 3. Deterministic shuffled train/test split
+int[][] split = Datasets.trainTestSplit(numRows, 0.3, 42L);
+int[] trainIdx = split[0], testIdx = split[1];
+
+// 4. Gather rows into flat matrices
+float[] trainX = Datasets.gatherRows(X, trainIdx, numFeatures);
+float[] testX  = Datasets.gatherRows(X, testIdx, numFeatures);
+
+// 5. Standardize with TRAINING statistics only
+float[][] norm = Datasets.fitStandardizer(trainX, numFeatures);
+Datasets.applyStandardizer(trainX, norm[0], norm[1]);
+Datasets.applyStandardizer(testX,  norm[0], norm[1]);
+
+// 6. Train...
+</code></pre>
+
+        <h2>2. Method Reference</h2>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Method</th>
+                <th style="padding: 8px;">Purpose</th>
+            </tr>
+            <tr><td style="padding: 8px;"><code>readCsv(location, delimiter)</code></td>
+                <td style="padding: 8px;">Reads delimited text from a classpath
+                    resource (leading <code>/</code>) or file path. Skips blank
+                    lines, trims cells, returns every row including any header.</td></tr>
+            <tr><td style="padding: 8px;"><code>toFloatFeatures(rows, cols...)</code></td>
+                <td style="padding: 8px;">Selected columns as one flat row-major
+                    float matrix (<code>rows &times; cols.length</code>).</td></tr>
+            <tr><td style="padding: 8px;"><code>toFloatColumn(rows, col)</code></td>
+                <td style="padding: 8px;">One numeric column as
+                    <code>float[]</code> (regression targets).</td></tr>
+            <tr><td style="padding: 8px;"><code>toIntColumn(rows, col)</code></td>
+                <td style="padding: 8px;">One integer column as
+                    <code>int[]</code> (class ids for <code>Sequential.fit</code>).</td></tr>
+            <tr><td style="padding: 8px;"><code>trainTestSplit(n, testFraction, seed)</code></td>
+                <td style="padding: 8px;">Seeded Fisher-Yates shuffle of indices
+                    0..n-1, split round-robin into
+                    <code>{trainIndices, testIndices}</code>. Same arguments
+                    always produce the same split.</td></tr>
+            <tr><td style="padding: 8px;"><code>fitStandardizer(flat, features)</code></td>
+                <td style="padding: 8px;">Per-feature mean and std of a flat
+                    row-major matrix; returns
+                    <code>{mean[], std[]}</code>. Fit on TRAIN data only.</td></tr>
+            <tr><td style="padding: 8px;"><code>applyStandardizer(flat, mean, std)</code></td>
+                <td style="padding: 8px;">In-place z-score:
+                    <code>(x - mean) / (std + 1e-8)</code>.</td></tr>
+            <tr><td style="padding: 8px;"><code>gatherRows(flat, indices, rowElems)</code></td>
+                <td style="padding: 8px;">Copies selected rows of a flat matrix
+                    into a new array (apply the split indices).</td></tr>
+            <tr><td style="padding: 8px;"><code>gatherValues(values, indices)</code></td>
+                <td style="padding: 8px;">Same for 1-D label arrays:
+                    <code>out[i] = values[idx[i]]</code>.</td></tr>
+            <tr><td style="padding: 8px;"><code>oneHot(label, numClasses)</code></td>
+                <td style="padding: 8px;">Unit-vector encoding:
+                    <code>oneHot(2, 4) -&gt; [0,0,1,0]</code>.</td></tr>
+        </table>
+
+        <h2>3. Why Seeded Splits Matter</h2>
+        <pre><code>int[][] s1 = Datasets.trainTestSplit(1000, 0.3, 42L);
+int[][] s2 = Datasets.trainTestSplit(1000, 0.3, 42L);
+// s1 equals s2 exactly - reproducible experiments</code></pre>
+        <p>A fixed seed means a colleague re-running your program sees identical
+        metrics. Changing only the seed gives you a fresh, equally valid split -
+        useful for measuring how much of your accuracy is luck:</p>
+        <ul>
+            <li>Run training with seeds 42, 43, 44... and average the metrics;
+                if the spread is large, your model (or dataset) is unstable.</li>
+            <li>Never compare two models on <em>different</em> splits.</li>
+        </ul>
+
+        <h2>4. Avoiding Leakage with fitStandardizer</h2>
+        <p>The golden rule: statistics that describe the data must come from the
+        <strong>training split only</strong>, then be applied unchanged to the
+        test split.</p>
+        <pre><code>// CORRECT: fit on train, apply to both
+float[][] norm = Datasets.fitStandardizer(trainX, FEATURES);
+Datasets.applyStandardizer(trainX, norm[0], norm[1]);
+Datasets.applyStandardizer(testX,  norm[0], norm[1]);
+
+// WRONG: fitting on all rows lets test-set means/stds
+// influence training - small but real optimistic bias
+float[][] leaky = Datasets.fitStandardizer(allX, FEATURES);</code></pre>
+
+        <h2>5. Working Without Files</h2>
+        <p>Several showcase projects generate synthetic datasets in code with a
+        fixed seed (house prices, autoencoder patterns). The same Datasets
+        helpers apply afterwards - generation replaces only step 1-2 of the
+        pipeline. See <a href="projects/tutorials/house-price-regressor.html">house-price-regressor</a>
+        for a complete end-to-end example.</p>
+
+        <h2>6. Summary</h2>
+        <ul>
+            <li><code>readCsv</code> handles classpath resources and files with
+                any delimiter</li>
+            <li><code>trainTestSplit(n, frac, seed)</code> = deterministic
+                shuffled index split</li>
+            <li><code>gatherRows/gatherValues</code> materialize the split</li>
+            <li><code>fitStandardizer</code> on train,
+                <code>applyStandardizer</code> to both splits - no leakage</li>
+            <li>Everything feeds directly into
+                <a href="regressor.html">Regressor</a> /
+                <code>Sequential.fit</code></li>
+        </ul>
+    </div>
+</div>
+</body>
+</html>

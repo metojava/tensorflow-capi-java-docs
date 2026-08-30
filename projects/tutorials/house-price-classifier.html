@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 3 - House Price Classifier</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 3 - House Price Band Classification</h1>
+
+        <h2>Project Overview</h2>
+        <p>Estimating a house's exact sale price is the textbook regression task.
+        But many real business questions are coarser: is this listing
+        <em>cheap</em>, <em>medium</em>, or <em>expensive</em>? This project takes
+        a synthetic housing market and turns price prediction into a 3-class
+        classification problem - showing when and why you would do that, how to
+        build labels from percentiles, and how to keep a synthetic pipeline
+        leak-free.</p>
+
+        <h2>Synthetic Dataset</h2>
+        <p>The data generator (seeded, so runs are reproducible) creates 1,200
+        houses with four features and a ground-truth pricing formula:</p>
+        <table>
+            <tr><th>Feature</th><th>Range</th><th>Effect on price</th></tr>
+            <tr><td>sqft</td><td>500..3500</td><td>+120 per sqft</td></tr>
+            <tr><td>bedrooms</td><td>1..6</td><td>+8,000 each</td></tr>
+            <tr><td>age</td><td>0..80</td><td>-900 per year</td></tr>
+            <tr><td>locationScore</td><td>1..10</td><td>+15,000 per point</td></tr>
+        </table>
+        <pre>price = 120*sqft + 8000*bedrooms - 900*age + 15000*location
+        + noise(N(0, 25000))
+price = max(price, 50000);   // clip unrealistic lows</pre>
+        <p><strong>Pros of synthetic data:</strong> no download or licensing, known
+        ground truth for debugging, full control over size and difficulty.
+        <strong>Cons:</strong> the model can only learn the formula you wrote -
+        it will never surprise you with a real-world interaction your simulator
+        lacks, and results are optimistically clean.</p>
+
+        <h2>Regression vs Classification Framing</h2>
+        <ul>
+            <li><strong>Regression</strong> outputs a number ($412,733). It preserves
+                maximum detail but demands more from the model and makes mistakes
+                hard to summarize.</li>
+            <li><strong>Classification into bands</strong> outputs a category. It
+                matches decision-making language (&ldquo;bargain&rdquo;,
+                &ldquo;market rate&rdquo;, &ldquo;overpriced&rdquo;), tolerates
+                pricing noise (the exact dollar figure is often arbitrary), and
+                lets us use cross-entropy with our <code>Sequential</code> stack.</li>
+        </ul>
+        <p>We classify here deliberately: banding absorbs the &plusmn;$25k noise we
+        injected, so classes are far more learnable than raw prices.</p>
+
+        <h2>Tertile Labeling (Done Right)</h2>
+        <p>To define cheap/medium/expensive without guessing thresholds, split the
+        training prices at their 1/3 and 2/3 quantiles:</p>
+        <pre>double[] sortedTrainPrices = trainPrices.clone();
+Arrays.sort(sortedTrainPrices);
+double t1 = sortedTrainPrices[trainN / 3];       // ~33rd percentile
+double t2 = sortedTrainPrices[2 * trainN / 3];   // ~67th percentile
+// label = price <= t1 ? 0 : (price <= t2 ? 1 : 2)</pre>
+        <p>Critical detail: thresholds come from the <strong>training split
+        only</strong>, then are applied unchanged to the test split. If test prices
+        influenced the thresholds, label information would leak from evaluation
+        data into training - inflating accuracy that evaporates in production.
+        The same rule applies to the standardization statistics below.</p>
+
+        <h2>Pipeline and Model</h2>
+        <ol>
+            <li>Generate 1,200 rows with seed 42.</li>
+            <li>Seeded shuffle, then a 70/30 split (840 train / 360 test).</li>
+            <li>Compute tertile thresholds + feature means/stds on the train half.</li>
+            <li>Label both splits with those thresholds; standardize both with
+                train stats: <code>(x - mean) / std</code>.</li>
+        </ol>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.01f),
+        new Input(4),
+        new Dense(24), new ReLU(),
+        new Dense(12), new ReLU(),
+        new Dense(3))) {
+
+    net.fit(trainX, trainY, 200, 32, testX, testY, true);
+}</pre>
+        <p>Standardization matters even more than usual here because sqft (~2000)
+        and locationScore (~5) differ by three orders of magnitude; unnormalized,
+        gradient descent would take wildly mismatched step sizes per weight.</p>
+
+        <h2>Evaluation</h2>
+        <p><code>Metrics.printReport</code> prints accuracy plus per-class
+        precision/recall/F1 from the confusion matrix. Expected result after 200
+        epochs:</p>
+        <pre>Accuracy:  0.85
+              0     1     2
+  0         113     9     0     cheap almost never called expensive
+  1          15    91     5     medium bleeds into both neighbors
+  2           0    25   102     expensive sometimes called medium</pre>
+        <p>All remaining errors sit on the <strong>diagonal neighbors</strong> -
+        nothing jumps from cheap straight to expensive. That is expected: houses
+        near a tertile boundary genuinely straddle two bands, so those mistakes
+        are mostly labeling artifacts rather than model failure.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\house-price-classifier&gt; run.cmd</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Increase the noise standard deviation to 50,000 - which class pair
+                gets confused first?</li>
+            <li>Switch to quartiles (4 bands). Does accuracy drop simply because
+                the boundaries are tighter?</li>
+            <li>Add a useless random feature (e.g. house color as a float). How
+                much does it hurt?</li>
+            <li>Compute tertile thresholds over ALL rows instead of train only -
+                measure the leakage effect on reported accuracy.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="xor-decision-boundary.html">&larr; XOR Decision Boundary</a></span>
+            <span>Next: <a href="mnist-digit-cnn.html">MNIST Digit CNN &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

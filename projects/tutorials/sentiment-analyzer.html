@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 7 - Sentiment Analyzer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 7 - Sentiment Analyzer with Embeddings</h1>
+
+        <h2>Project Overview</h2>
+        <p>Classify short movie reviews as <em>positive</em> or <em>negative</em>. Instead of
+        downloading a corpus, this project hand-curates 80 one-line reviews directly in code
+        (40 positive, 40 negative) so every step - tokenizing, building the vocabulary,
+        encoding text to numbers - is visible and reproducible. The model learns a trainable
+        word-embedding table and classifies reviews from it.</p>
+
+        <h2>The Corpus and the Vocabulary</h2>
+        <p>Sentiment-bearing words (<em>wonderful, brilliant, terrible, boring ...</em>) are
+        deliberately reused across many sentences so a classifier can actually learn them
+        from ~64 training examples; filler words add vocabulary variety (178 distinct words
+        in total). Every word is mapped to an integer id:</p>
+        <table>
+            <tr><th>Id</th><th>Meaning</th></tr>
+            <tr><td>0</td><td><code>&lt;UNK&gt;</code> - any word never seen while building the vocabulary</td></tr>
+            <tr><td>1</td><td><code>&lt;PAD&gt;</code> - padding used to fill short sentences</td></tr>
+            <tr><td>2..V</td><td>corpus words sorted by descending frequency (ties alphabetical)</td></tr>
+        </table>
+
+        <h2>Encoding: Fixed-Length Token Sequences</h2>
+        <p>A neural net needs fixed-size inputs, but sentences have different lengths. Each
+        review is lowercased, stripped of punctuation, split on whitespace and then encoded
+        to exactly <code>T = 12</code> token ids:</p>
+        <ul>
+            <li><strong>Truncation</strong> - longer sentences keep only their first 12 tokens.</li>
+            <li><strong>Padding</strong> - shorter sentences are right-padded with
+                <code>PAD = 1</code>.</li>
+        </ul>
+        <pre>"a dull unfunny movie with bad dialogue" -> [ 34  9 77  5 41 88   1   1   1   1   1   1 ]</pre>
+
+        <h3>Embeddings vs one-hot encoding</h3>
+        <p>Two ways to turn id 41 into something a Dense layer can use:</p>
+        <ul>
+            <li><strong>One-hot vector</strong> - length V (=180 here) with a single 1. Huge,
+                sparse, and every word is exactly as different from every other word.</li>
+            <li><strong>Embedding row</strong> - a learned dense vector of size 16 from a
+                <code>[V, 16]</code> table. Words that behave similarly drift toward similar
+                vectors during training, which is what generalizes across sentences.</li>
+        </ul>
+        <p><strong>Lookup-as-one-hot-matmul note:</strong> mathematically, picking row
+        <code>i</code> of table <code>E</code> equals multiplying the one-hot vector of
+        <code>i</code> by <code>E</code>. The library realizes the lookup exactly that way -
+        <code>onehot(ids) @ E[vocab,16]</code> - because its gradient is a plain dense tensor
+        that the generic <code>TF_AddGradients</code> path handles without IndexedSlices
+        conversion. That is also why the embedding ids are fed as floats through an
+        <code>Input3D(T,1)</code> flow and cast to int32 inside the graph.</p>
+
+        <h2>Model Architecture</h2>
+        <pre>Input3D(12,1)
+Embedding(vocabSize=180, 16)     lookup table, output flattens to [batch, 12*16=192]
+Dense(16), ReLU                  classifier head
+Dropout(0.2)
+Dense(2)                         negative / positive scores</pre>
+        <p>The Embedding output for one review is the concatenation of its 12 word vectors -
+        a 192-value vector - so the following Dense layers see ordinary tabular data.</p>
+
+        <h2>Training Code Walkthrough</h2>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.02f),
+        new Input3D(T, 1),
+        new Embedding(vocabSize, 16),
+        new Dense(16), new ReLU(),
+        new Dropout(0.2f),
+        new Dense(2))) {
+
+    net.fit(trainX, trainY, 250, 16, testX, testY, true);
+}</pre>
+        <ul>
+            <li><strong>80/20 seeded split</strong> - indices are shuffled once with seed 42:
+                64 reviews train, 16 measure generalization.</li>
+            <li><strong>250 epochs &times; batch 16</strong> - only 4 gradient steps per epoch;
+                the whole run takes seconds. Training loss reaches ~0 quickly, which is normal
+                on tiny corpora.</li>
+            <li><strong>Data layout</strong> - flat arrays: 64 rows &times; 12 ids = 768 floats.</li>
+        </ul>
+
+        <h2>Evaluation</h2>
+        <p>Held-out accuracy lands between 75% and 88% depending on the shuffle (the library's
+        per-epoch shuffle is intentionally unseeded), clearly above the 69% majority-class
+        baseline for this split:</p>
+        <pre>Accuracy:        0.8750
+
+Confusion matrix (rows = true label):
+             0     1
+  0          4     1      negative: recall 0.80
+  1          1    10      positive: recall 0.91</pre>
+
+        <p>The more interesting output is the demo - four <strong>newly written</strong>
+        sentences, encoded with the same pipeline and classified live:</p>
+        <pre>"a wonderful and brilliant film with great acting"
+  -> positive  P(negative)=0.000 P(positive)=1.000
+"dull awful acting and a boring script what a waste"
+  -> negative  P(negative)=1.000 P(positive)=0.000
+"gorgeous visuals charming characters i loved this movie"
+  -> positive  P(negative)=0.000 P(positive)=1.000
+"the worst movie of the year terrible and painful"
+  -> negative  P(negative)=1.000 P(positive)=0.000</pre>
+
+        <h2>Model Persistence</h2>
+        <p><code>net.saveTo(Path.of("target", "sentiment-model.bin"))</code> stores the
+        architecture spec, vocabulary-independent weights included; reload with
+        <code>Sequential.loadFrom(path, Optimizer.adam(0.02f))</code>. Keep the vocabulary
+        map alongside the file - without it you cannot tokenize new sentences the same way.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\sentiment-analyzer&gt; run.cmd</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Add 10 new reviews of your own - does accuracy improve more if they reuse existing marker words or introduce new ones?</li>
+            <li>Raise T to 16 and re-pad - what changes for short sentences?</li>
+            <li>Increase embDim to 32 with only ~180 words - earlier overfitting or better generalization?</li>
+            <li>Print the learned embedding rows of "wonderful", "great" and "terrible" - do positive words cluster together?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="fashion-mnist-cnn.html">&larr; Fashion-MNIST CNN</a></span>
+            <span>Next: <a href="airline-lstm.html">Airline LSTM &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

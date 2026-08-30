@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JFreeChart Integration with TensorFlow C API Java</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .example { border-left: 4px solid #0066cc; padding-left: 15px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="jfreechart-integration.html" class="active">JFreeChart Integration</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>JFreeChart Integration with TensorFlow C API Java</h1>
+        
+        <p>This page covers using JFreeChart 1.5.4 to visualize TensorFlow C API Java machine learning results, including image grids with predicted labels and accuracy percentages.</p>
+        
+        <h2>Setup</h2>
+        <pre><code>// Add to pom.xml
+<dependency>
+    <groupId>org.jfree</groupId>
+    <artifactId>jfreechart</artifactId>
+    <version>1.5.4</version>
+</dependency></code></pre>
+        
+        <h2>Core Concept: XYPlot with Image Annotations</h2>
+        <p>JFreeChart doesn't have a built-in image grid component, but we can use <code>XYPlot</code> with <code>XYImageAnnotation</code> and <code>XYTextAnnotation</code> to create a custom grid displaying:</p>
+        <ul>
+            <li>Test images (28x28 pixels scaled up)</li>
+            <li>Predicted labels underneath each image</li>
+            <li>Per-class accuracy percentage under the label</li>
+        </ul>
+        
+        <h2>Implementation Example</h2>
+        
+        <h3>1. Create the Chart Dataset</h3>
+        <pre><code>import org.jfree.data.xy.XYSeriesCollection;
+
+// Create empty series collection (we use annotations, not data points)
+XYSeriesCollection dataset = new XYSeriesCollection();
+
+// Set up axes (hidden, just serving as a coordinate system)
+NumberAxis domain = new NumberAxis("");
+domain.setRange(0, COLS);      // 5 columns
+domain.setVisible(false);
+
+NumberAxis range = new NumberAxis("");
+range.setRange(0, ROWS);       // 2 rows
+range.setInverted(true);       // Row 0 at top
+range.setVisible(false);
+
+// Create plot with no renderer (we use annotations)
+XYPlot plot = new XYPlot(dataset, domain, range,
+        new XYLineAndShapeRenderer(false, false));
+plot.setBackgroundPaint(Color.WHITE);
+plot.setOutlineVisible(false);
+plot.setDomainGridlinesVisible(false);
+plot.setRangeGridlinesVisible(false);</code></pre>
+        
+        <h2>2. Add Image Annotations per Class</h2>
+        <pre><code>// For each of the 10 classes (digits 0-9 or fashion items):
+for (int c = 0; c < NUM_CLASSES; c++) {
+    int row = c / COLS, col = c % COLS;
+    double cx = col + 0.5;  // center x coordinate
+    
+    // Load and scale the test image
+    BufferedImage img = toImage(testX, sampleIdx[c]);
+    plot.addAnnotation(new XYImageAnnotation(cx, row + 0.40, img));
+    
+    // Predict the class and get confidence
+    int pred = Metrics.argmax(sampleProbs, c * NUM_CLASSES, NUM_CLASSES);
+    boolean correct = pred == c;
+    
+    // Add predicted label below the image
+    XYTextAnnotation label = new XYTextAnnotation(
+            Metrics.FASHION_CLASS_NAMES[pred], cx, row + 0.72);
+    label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
+    label.setTextAnchor(TextAnchor.CENTER);
+    label.setPaint(correct ? Color.DARK_GRAY : Color.RED);
+    label.setBackgroundPaint(Color.WHITE);
+    plot.addAnnotation(label);
+    
+    // Add accuracy percentage under the label
+    XYTextAnnotation acc = new XYTextAnnotation(
+            String.format("accuracy %.1f%%", classAcc[c] * 100), cx, row + 0.86);
+    acc.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+    acc.setTextAnchor(TextAnchor.CENTER);
+    acc.setPaint(Color.NUT_BROWN);
+    acc.setBackgroundPaint(Color.WHITE);
+    plot.addAnnotation(acc);
+}</code></pre>
+        
+        <h2>3. Complete Chart Creation</h2>
+        <pre><code>// Build the JFreeChart
+JFreeChart chart = new JFreeChart(String.format(
+        "Fashion-MNIST CNN - overall accuracy %.2f%%", overallAcc * 100),
+        JFreeChart.DEFAULT_TITLE_FONT, plot, false);
+chart.setBackgroundPaint(Color.WHITE);
+
+// Create the chart panel and frame
+ChartPanel panel = new ChartPanel(chart);
+panel.setPreferredSize(new Dimension(COLS * 220, ROWS * 290));
+
+JFrame frame = new JFrame("Fashion-MNIST classifier");
+frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+frame.add(panel);
+frame.pack();
+frame.setLocationRelativeTo(null);
+frame.setVisible(true);</code></pre>
+        
+        <h2>Full Example: MnistClassifier.showGrid()</h2>
+        <pre><code>// From MnistClassifier.java - complete method
+private static void showGrid(float[] testX, int[] sampleIdx, float[] sampleProbs,
+                              double[] classAcc, double overallAcc) {
+    XYSeriesCollection dataset = new XYSeriesCollection();
+    
+    NumberAxis domain = new NumberAxis("");
+    domain.setRange(0, COLS);
+    domain.setVisible(false);
+    
+    NumberAxis range = new NumberAxis("");
+    range.setRange(0, ROWS);
+    range.setInverted(true);
+    range.setVisible(false);
+    
+    XYPlot plot = new XYPlot(dataset, domain, range,
+            new XYLineAndShapeRenderer(false, false));
+    plot.setBackgroundPaint(Color.WHITE);
+    plot.setOutlineVisible(false);
+    plot.setDomainGridlinesVisible(false);
+    plot.setRangeGridlinesVisible(false);
+    
+    for (int c = 0; c < NUM_CLASSES; c++) {
+        int row = c / COLS, col = c % COLS;
+        double cx = col + 0.5;
+        
+        BufferedImage img = toImage(testX, sampleIdx[c]);
+        plot.addAnnotation(new XYImageAnnotation(cx, row + 0.40, img));
+        
+        int pred = Metrics.argmax(sampleProbs, c * NUM_CLASSES, NUM_CLASSES);
+        boolean ok = pred == c;
+        
+        XYTextAnnotation label = new XYTextAnnotation(
+                "\"" + DIGIT_NAMES[pred] + "\"", cx, row + 0.72);
+        label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
+        label.setTextAnchor(TextAnchor.CENTER);
+        label.setPaint(ok ? Color.GREEN : Color.RED);
+        label.setBackgroundPaint(Color.WHITE);
+        plot.addAnnotation(label);
+        
+        XYTextAnnotation acc = new XYTextAnnotation(
+                String.format("accuracy %.1f%%", classAcc[c] * 100), cx, row + 0.86);
+        acc.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        acc.setTextAnchor(TextAnchor.CENTER);
+        acc.setPaint(Color.BLUE);
+        acc.setBackgroundPaint(Color.WHITE);
+        plot.addAnnotation(acc);
+    }
+    
+    JFreeChart chart = new JFreeChart(String.format(
+            "MNIST digit CNN - overall accuracy %.2f%%", overallAcc * 100),
+            JFreeChart.DEFAULT_TITLE_FONT, plot, false);
+    chart.setBackgroundPaint(Color.WHITE);
+    
+    ChartPanel panel = new ChartPanel(chart);
+    panel.setPreferredSize(new Dimension(COLS * 220, ROWS * 290));
+    
+    JFrame frame = new JFrame("MNIST digit classifier");
+    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    frame.add(panel);
+    frame.pack();
+    frame.setLocationRelativeTo(null);
+    frame.setVisible(true);
+}</code></pre>
+        
+        <h2>Key JFreeChart 1.5.x API Notes</h2>
+        <ul>
+            <li><code>XYImageAnnotation(double x, double y, Image image)</code> - draws image centered at data coordinates (x,y)</li>
+            <li><code>XYTextAnnotation(String text, double x, double y)</code> - adds text at data coordinates</li>
+            <li><code>TextAnchor.CENTER</code> - centers text at the coordinate point (JFreeChart 1.5.x package: <code>org.jfree.chart.ui.TextAnchor</code>)</li>
+            <li><code>NumberAxis.setInverted(true)</code> - flips y-axis so row 0 appears at the top</li>
+            <li><code>XYLineAndShapeRenderer(false, false)</code> - disables lines and shapes (we only use annotations)</li>
+        </ul>
+        
+        <h2>Customizing Appearance</h2>
+        <pre><code>// Example: Different colors for correct vs incorrect predictions
+label.setPaint(ok ? Color.GREEN.darker() : Color.RED);
+label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));  // Bold for label
+
+// Different font sizes for different annotations
+label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));  // Prediction name
+acc.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));   // Accuracy percentage
+
+// Background for text annotations
+label.setBackgroundPaint(Color.WHITE);
+acc.setBackgroundPaint(Color.WHITE);
+
+// Text alignment
+label.setTextAnchor(TextAnchor.CENTER);  // Center-align at x coordinate
+acc.setTextAnchor(TextAnchor.CENTER);</code></pre>
+        
+        <h2>Chart Output Example</h2>
+        <p>The resulting window displays a 5×2 grid (5 columns, 2 rows = 10 total positions) showing:</p>
+        <ul>
+            <li>One sample test image per class (digits 0-9 or fashion items)</li>
+            <li>The predicted label name in bold underneath each image</li>
+            <li>The per-class accuracy percentage in smaller text under the label</li>
+            <li>Green text = correct prediction, Red text = incorrect</li>
+        </ul>
+        
+        <h2>Integration with TensorFlow Results</h2>
+        <p>The chart is populated from the evaluation phase:</p>
+        <pre><code>// After training and evaluating:
+double[] classAcc = classAccuracy(conf);  // per-class accuracy from confusion matrix
+int[] sampleIdx = firstIndexOfEachClass(testY);  // first test index per class
+float[] samples = new float[NUM_CLASSES * IMG_H * IMG_W];
+for (int c = 0; c < NUM_CLASSES; c++)
+    System.arraycopy(testX, sampleIdx[c] * IMG_H * IMG_W,
+            samples, c * IMG_H * IMG_W, IMG_H * IMG_W);
+float[] sampleProbs = net.predict(samples);  // predict one sample per class
+
+// Open the chart window
+SwingUtilities.invokeLater(() -> showGrid(
+        testX, sampleIdx, sampleProbs, classAcc, overallAcc));</code></pre>
+    </div>
+</div>
+</body>
+</html>

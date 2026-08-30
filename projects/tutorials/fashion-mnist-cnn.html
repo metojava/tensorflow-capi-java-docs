@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 6 - Fashion-MNIST CNN</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 6 - Fashion-MNIST CNN with DepthwiseConv2D</h1>
+
+        <h2>Project Overview</h2>
+        <p>Classify 28&times;28 grayscale images of clothing into ten classes
+        (T-shirt, Trouser, Pullover, Dress, Coat, Sandal, Shirt, Sneaker, Bag,
+        Ankle boot). Fashion-MNIST is a drop-in replacement for digit MNIST with
+        the exact same file format and split sizes - but it is genuinely harder:
+        a plain MLP plateaus around 88%, while this CNN reaches
+        <strong>~91-92% after 8 epochs</strong>. The architecture also showcases
+        <code>DepthwiseConv2D</code>, the cheap half of a separable convolution.</p>
+
+        <h2>The Dataset</h2>
+        <p>The four IDX files (<code>train-images-idx3-ubyte.gz</code>,
+        <code>train-labels-idx1-ubyte.gz</code>, plus the <code>t10k-</code> test
+        pair) are read directly from disk - no extraction needed. The project
+        takes the data directory as its first argument:</p>
+        <pre>String dataDir = "C:\\Users\\dell\\Desktop\\data\\fashion";   // default
+IdxDataset.Images trI = IdxDataset.loadImages(
+        Path.of(dataDir, "train-images-idx3-ubyte.gz").toString());
+float[] trainX = IdxDataset.normalize(trI.pixels());   // uint8 -> [0,1]</pre>
+        <ul>
+            <li><strong>60,000 train / 10,000 test</strong> images, pixel values
+                scaled from 0..255 to 0..1.</li>
+            <li><strong>Labels 0..9</strong> map to
+                <code>Metrics.FASHION_CLASS_NAMES</code>, which ships with the
+                library so every project prints identical class names.</li>
+            <li><strong>No shuffling worries</strong> - <code>fit()</code> reshuffles
+                mini-batches internally every epoch.</li>
+        </ul>
+
+        <h2>Separable Convolutions: the Parameter Math</h2>
+        <p>A regular <code>Conv2D(32,3,3)</code> sliding over 32 input channels
+        learns one 3&times;3&times;32 kernel per output channel:</p>
+        <table>
+            <tr><th>Layer</th><th>Kernel shape</th><th>Weights</th></tr>
+            <tr><td><code>Conv2D(32) on 32 channels</code></td><td>32 &times; (3&times;3&times;32)</td><td><strong>9,216</strong></td></tr>
+            <tr><td><code>DepthwiseConv2D(32) on 32 channels</code></td><td>32 &times; (3&times;3&times;1)</td><td><strong>288</strong></td></tr>
+        </table>
+        <p>A depthwise conv applies an <em>independent</em> 3&times;3 filter to each
+        channel instead of mixing all channels together - roughly 32&times; fewer
+        parameters here. It cannot learn cross-channel combinations by itself,
+        which is why it works best stacked <em>after</em> a normal Conv2D that has
+        already created meaningful channels (this pattern is the "depthwise
+        separable" idea behind MobileNet). In our network it acts as a cheap
+        spatial refinement pass before pooling.</p>
+
+        <h2>Model Architecture</h2>
+        <pre>Input4D(28, 28, 1)
+Conv2D(32, 3, 3, s1, s1, SAME)   ReLU     28x28x32  - learn wide features
+DepthwiseConv2D(32,3,3,s1,s1,SAME) ReLU   28x28x32  - refine each channel cheaply
+MaxPool2D(2, 2, 2, 2, VALID)              14x14x32  - downsample
+Flatten()                                  6272
+Dense(128)  ReLU  Dropout(0.25)
+Dense(10)                                  one score per class</pre>
+        <p>Spatial size bookkeeping with stride 1 and SAME padding the feature
+        maps stay 28&times;28 through both convolutions; VALID 2&times;2 pooling then
+        halves them to 14&times;14. As always, the <strong>last layer must be
+        Dense(numClasses)</strong> - <code>Sequential</code> reads the class count
+        from it.</p>
+
+        <h2>Training Code Walkthrough</h2>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.001f),
+        new Input4D(28, 28, 1),
+        new Conv2D(32, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new DepthwiseConv2D(32, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Flatten(),
+        new Dense(128), new ReLU(),
+        new Dropout(0.25f),
+        new Dense(10))) {
+
+    net.fit(trainX, trainY, epochs, batch, testX, testY, true);
+}</pre>
+        <ul>
+            <li><strong>Adam(0.001)</strong> - the standard starting rate for CNNs;
+                larger rates oscillate on image data.</li>
+            <li><strong>Dropout(0.25)</strong> is active only during training
+                (<code>setTraining(false)</code> is handled inside
+                <code>predict()</code>).</li>
+            <li><strong>Epochs/batch via args</strong> - defaults are
+                <code>epochs=8, batch=128</code>; pass
+                <code>"-Dexec.args=DIR EPOCHS BATCH"</code> or named flags
+                <code>--datadir --epochs --batch</code>. One epoch takes ~18 s
+                on CPU, so the full run finishes in about two minutes.</li>
+        </ul>
+
+        <h2>Evaluation</h2>
+        <p><code>Metrics.printReport</code> prints accuracy plus per-class
+        precision/recall/F1 using <code>FASHION_CLASS_NAMES</code>, and the main
+        method additionally prints ten textual sample predictions. Expected result
+        after 8 epochs (~exact numbers vary slightly):</p>
+        <pre>Accuracy:        0.917
+class         precision    recall        f1
+T-shirt/top      0.89        0.90       0.89
+Trouser          0.99        0.98       0.98
+...
+Shirt            0.79        0.75       0.77   <- hardest class</pre>
+        <p><strong>Fashion vs digits:</strong> digit MNIST passes 99% with this
+        same budget because digit shapes are stroke-based and consistent.
+        Clothing categories differ mainly by texture and silhouette details -
+        shirts, coats, pullovers and T-shirts all share the same outline, and
+        their confusion cells dominate the error matrix. That makes
+        Fashion-MNIST a much better proxy for real vision tasks.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\fashion-mnist-cnn&gt; run.cmd
+rem or with custom settings:
+run.cmd C:\Users\dell\Desktop\data\fashion 8 128</pre>
+        <p>Requirements: Maven on PATH, the four .gz files in the data directory,
+        and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Replace <code>DepthwiseConv2D(32,...)</code> with a second
+                <code>Conv2D(32,...)</code> - how much slower is training, and how
+                much accuracy do the extra 8,928 parameters buy?</li>
+            <li>Add a second pool + depthwise stage (14&rarr;7 spatial) and compare.</li>
+            <li>Train only 1 epoch (<code>run.cmd . 1</code>) - already ~87%?
+                Compare with the MLP-only baseline you would get from Flatten +
+                Dense layers.</li>
+            <li>Print the full confusion matrix and list the three most confused
+                class pairs; explain each from the garment silhouettes.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Prev: <a href="wine-quality.html">&larr; Wine Quality Classification</a></span>
+            <span>Next: <a href="sentiment-analyzer.html">Sentiment Analyzer &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

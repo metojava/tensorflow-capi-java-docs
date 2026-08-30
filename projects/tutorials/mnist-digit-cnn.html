@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 4 - MNIST Digit CNN</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 4 - MNIST Digit Classification with a CNN</h1>
+
+        <h2>Project Overview</h2>
+        <p>Classify handwritten digits (0-9) from 28&times;28 grayscale images using a small
+        convolutional neural network. MNIST is the classic computer-vision starter dataset:
+        60,000 training images and 10,000 test images of digits written by census employees
+        and high-school students. This project shows how convolution and pooling extract
+        shape features, why a CNN beats a plain MLP on images, and how to keep the whole
+        thing running in well under a minute on CPU.</p>
+
+        <h2>The Dataset</h2>
+        <p>MNIST ships in the original IDX binary format, gzip-compressed. The project reads
+        the four files directly with <code>IdxDataset.loadImages / loadLabels</code>:</p>
+        <table>
+            <tr><th>File</th><th>Contents</th><th>Shape</th></tr>
+            <tr><td>train-images-idx3-ubyte.gz</td><td>training images</td><td>60000 &times; 28 &times; 28</td></tr>
+            <tr><td>train-labels-idx1-ubyte.gz</td><td>training labels 0..9</td><td>60000</td></tr>
+            <tr><td>t10k-images-idx3-ubyte.gz</td><td>test images</td><td>10000 &times; 28 &times; 28</td></tr>
+            <tr><td>t10k-labels-idx1-ubyte.gz</td><td>test labels 0..9</td><td>10000</td></tr>
+        </table>
+        <p>The default data directory is
+        <code>C:\Users\dell\Desktop\data\mnist</code>; pass another directory as the first
+        program argument if your files live elsewhere.</p>
+
+        <h2>Data Preparation</h2>
+        <p>Only one preparation step is needed - pixel normalization:</p>
+        <pre>float[] trainX = IdxDataset.normalize(trIm.pixels());   // bytes 0..255 -> floats 0..1</pre>
+        <p>Dividing by 255 puts every input in <code>[0,1]</code>. Small, similarly-scaled
+        inputs keep the gradient magnitudes even across layers, so Adam's learning rate of
+        0.001 works for every weight at once. Note that labels arrive as unsigned bytes and
+        are widened with <code>&amp; 0xFF</code> before training.</p>
+
+        <h2>Model Architecture</h2>
+        <pre>Input4D(28,28,1)
+  &#9492;&#9472; Conv2D(16,3x3, stride 1, SAME), ReLU      learns edges and strokes
+       MaxPool2D(2x2, stride 2, VALID)          halves the map
+  &#9492;&#9472; Conv2D(32,3x3, stride 1, SAME), ReLU      learns digit-part combinations
+       MaxPool2D(2x2, stride 2, VALID)
+  &#9492;&#9472; Flatten                                    7&times;7&times;32 = 1568 values
+  &#9492;&#9472; Dense(128), ReLU, Dropout(0.25)            classifier head
+Dense(10)                                       one score per digit</pre>
+
+        <h3>Why a CNN beats an MLP on images</h3>
+        <ul>
+            <li><strong>Local connectivity</strong> - a 3&times;3 filter looks at neighboring
+                pixels where the visual information lives; an MLP's dense weights connect
+                every pixel to everything and must relearn shift relationships from scratch.</li>
+            <li><strong>Parameter sharing</strong> - the same 16 filters slide across all 784
+                positions, so a stroke detector learned in the corner also works in the center.
+                This first conv layer holds only 16&times;(3&times;3)+16 = 160 weights instead of
+                tens of thousands.</li>
+            <li><strong>Translation tolerance</strong> - pooling summarizes each neighborhood,
+                so small shifts of the digit barely change the pooled features.</li>
+        </ul>
+
+        <h3>Spatial math: SAME convolutions and stride-2 pooling</h3>
+        <p><code>SAME</code> padding pads the input with zeros so a stride-1 3&times;3
+        convolution keeps the width and height unchanged. Each 2&times;2 pool with stride 2
+        then halves both dimensions:</p>
+        <pre>28x28x1  -> Conv SAME 3x3  -> 28x28x16 -> MaxPool 2x2 s2 -> 14x14x16
+         -> Conv SAME 3x3  -> 14x14x32 -> MaxPool 2x2 s2 ->  7x7x32
+Flatten  -> 1568 features -> Dense(128) -> Dense(10)</pre>
+        <p><code>VALID</code> pooling on an even-sized map is exact (no dropped rows/columns),
+        which is why the chain is clean at every step.</p>
+
+        <h2>Training Code Walkthrough</h2>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.001f),
+        new Input4D(28, 28, 1),
+        new Conv2D(16, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Conv2D(32, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Flatten(),
+        new Dense(128), new ReLU(),
+        new Dropout(0.25f),
+        new Dense(10))) {
+
+    net.fit(trainX, trainY, epochs, batchSize, testX, testY, true);
+}</pre>
+        <ul>
+            <li><strong>Adam(0.001)</strong> - the canonical starting rate for CNNs; higher
+                rates oscillate because conv gradients are noisier than dense ones.</li>
+            <li><strong>Dropout(0.25)</strong> after the hidden Dense layer randomly zeroes a
+                quarter of its units during training only, delaying overfitting.</li>
+            <li><strong>Data layout</strong> - flat row-major float arrays: 60,000 &times; 784
+                = 47M floats for the training images.</li>
+            <li><strong>Command line</strong> - <code>args[0] args[1] args[2]</code> override
+                datadir, epochs (default 3) and batch (default 128); flags like
+                <code>--epochs 1</code> also work for quick checks.</li>
+        </ul>
+
+        <h2>Evaluation</h2>
+        <p>After 3 epochs (about 40 seconds on CPU) the network reaches:</p>
+        <pre>Epoch 3/3 - loss: 0.0518 - val_loss: 0.0414 - val_acc: 0.9854
+
+Accuracy:        0.9854          <- 9854 / 10000 test digits correct</pre>
+        <p>The 10&times;10 confusion matrix (<code>conf[true][predicted]</code>) shows which
+        digits get mixed up - typically 4/9, 3/5 and 7/2 dominate, exactly the pairs humans
+        also misread. Even a single epoch already clears 98%:</p>
+        <pre>--epochs 1  ->  Accuracy: 0.9803
+--epochs 3  ->  Accuracy: 0.9854</pre>
+        <p>The project also prints ten textual sample predictions straight from
+        <code>net.predict(testX)</code>, e.g.
+        <code>image 0: true=7 predicted=7 confidence=1.000 OK</code>.</p>
+
+        <h2>Model Persistence</h2>
+        <p><code>net.saveTo(Path.of("target", "mnist-cnn-model.bin"))</code> stores the layer
+        spec plus weights; reload later with
+        <code>Sequential.loadFrom(path, Optimizer.adam(0.001f))</code> without retraining.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\mnist-digit-cnn&gt; run.cmd
+rem or with custom settings:
+run.cmd C:\Users\dell\Desktop\data\mnist 3 128</pre>
+        <p>Requirements: Maven on PATH, the four .gz IDX files in the data directory, and the
+        TensorFlow native DLLs at <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd
+        points <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Add a third <code>Conv2D(64,...)</code> block - how much accuracy do you gain per extra second of training?</li>
+            <li>Replace both MaxPool layers with strides of 2 in the convolutions itself - compare speed and accuracy.</li>
+            <li>Raise the learning rate to 0.01 - does the loss curve become unstable?</li>
+            <li>Remove <code>IdxDataset.normalize(...)</code> and train on raw 0..255 pixels - how badly does convergence suffer?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="house-price-classifier.html">&larr; House Price Classifier</a></span>
+            <span>Next: <a href="wine-quality.html">Wine Quality &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

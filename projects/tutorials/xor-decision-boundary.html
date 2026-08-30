@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 2 - XOR Decision Boundary</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 2 - The XOR Problem and Decision Boundaries</h1>
+
+        <h2>Project Overview</h2>
+        <p>The XOR (exclusive-or) problem is the tiny dataset that famously stalled
+        neural network research in 1969: a single-layer perceptron provably
+        <em>cannot</em> learn it. In this project we generate noisy 2-D XOR data,
+        train a one-hidden-layer MLP that solves it easily, and visualize the
+        learned decision surface with JFreeChart.</p>
+
+        <h2>Why a Single-Layer Perceptron Fails XOR</h2>
+        <p>A perceptron computes a weighted sum of its inputs and fires when it
+        exceeds a threshold - geometrically, that is a single straight line cutting
+        the plane. Everything on one side is class&nbsp;1, everything on the other
+        side is class&nbsp;0.</p>
+        <p>XOR labels the four corners of the square:</p>
+        <table>
+            <tr><th>x&#8321;</th><th>x&#8322;</th><th>x&#8321;&oplus;x&#8322;</th></tr>
+            <tr><td>-1</td><td>-1</td><td>0 (same signs)</td></tr>
+            <tr><td>-1</td><td>+1</td><td>1 (opposite signs)</td></tr>
+            <tr><td>+1</td><td>-1</td><td>1 (opposite signs)</td></tr>
+            <tr><td>+1</td><td>+1</td><td>0 (same signs)</td></tr>
+        </table>
+        <p>No single line can put the two white corners together while excluding
+        the two black corners - they sit diagonally opposite each other. Formally,
+        the classes are not <strong>linearly separable</strong>, so any linear model
+        tops out at 50% here no matter how long you train it.</p>
+
+        <h2>The Fix: A Hidden Layer + Non-Linearity</h2>
+        <p>One hidden layer of non-linear units lets the network build features
+        that a straight line cannot express. With <code>Tanh</code> activations,
+        each hidden neuron learns its own line and the output layer combines those
+        lines into curves. Geometrically, the network learns an intermediate
+        representation such as &ldquo;x&middot;y &gt; 0?&rdquo;, which is exactly
+        the XOR rule:</p>
+        <pre>Input(2)
+  &#9492;&#9472; Dense(8), Tanh     hidden layer: bends the space
+Dense(2)                   output layer: class scores</pre>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.03f),
+        new Input(2),
+        new Dense(8), new Tanh(),
+        new Dense(2))) {
+
+    History h = net.fit(trainX, trainY, 300, 32, valX, valY, true);
+}</pre>
+        <p>We use a relatively high learning rate (0.03) because the problem is
+        small and smooth; Adam adapts step sizes per weight, so training converges
+        within tens of epochs.</p>
+
+        <h2>Noisy Synthetic Data</h2>
+        <p>Real problems always have noise, so we add ~8% label flips to 400 points
+        sampled uniformly from [-1,1]&sup2;. The rule is simple:
+        <code>label = sign(x&middot;y) &gt; 0 ? 1 : 0</code>, then flip randomly.
+        This caps achievable accuracy near 92% - if the trained model hits ~90%,
+        it has learned the true pattern rather than memorizing the noise. Because
+        the generator uses a fixed seed, every run reproduces the same dataset.</p>
+
+        <h2>Visualizing the Decision Surface</h2>
+        <p>After training, the program asks the network for a prediction at every
+        point of a 100&times;100 grid covering the plane - all 10,000 grid cells go
+        through <code>net.predict()</code> in a single batched forward pass:</p>
+        <pre>float[] grid = new float[GRID * GRID * 2];   // [x,y] pairs
+float[] probs = net.predict(grid);           // [10000][2] probabilities
+// color each cell by argmax(probs[i], i+1)</pre>
+        <p>JFreeChart renders the result as a scatter plot (<code>XYPlot</code>
+        with an <code>XYLineAndShapeRenderer(false, true)</code>): pastel blue
+        squares mark predicted class&nbsp;0 territory, pastel salmon marks
+        class&nbsp;1, and the original 400 points are overlaid as large opaque
+        circles. Reading the chart:</p>
+        <ul>
+            <li>The boundary between the colored regions is a <strong>saddle /
+                hourglass shape</strong>, not a line - visual proof that the
+                hidden layer bent the space.</li>
+            <li>Miscolored circles are the injected label noise; they live inside
+                the wrong region because their labels were deliberately flipped.</li>
+            <li>The boundary is softest along the diagonals where the data is
+                densest - exactly where the network had to make fine
+                distinctions.</li>
+        </ul>
+        <p>This follows the same JFreeChart pattern used throughout these projects;
+        see the <a href="../../jfreechart-integration.html">JFreeChart
+        Integration</a> page for API details.</p>
+
+        <h2>Expected Output</h2>
+        <pre>Generated 400 noisy XOR points (~8% label flips)
+Epoch 1/300 - loss: 0.7655 ...
+...
+Final: train loss 0.02 | val acc 0.887
+Accuracy on all 400 points: 0.910 (364/400)</pre>
+        <p>~91% accuracy against a ~92% noise ceiling means the network recovered
+        the underlying XOR function almost perfectly. Training loss falls from
+        ~0.77 toward ~0.02 while validation accuracy plateaus once only the noise
+        remains unexplainable.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\xor-decision-boundary&gt; run.cmd</pre>
+        <p>A window titled &ldquo;XOR Decision Boundary&rdquo; opens after training;
+        close it to exit. Pass <code>--no-gui</code> for a headless run
+        (<code>run.cmd --no-gui</code>). Requirements: Maven on PATH and the
+        TensorFlow native DLLs at <code>libtensorflow-cpu-windows-x86_64\lib</code>.</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Delete the <code>Dense(8), Tanh()</code> layers so the model is
+                <code>Input(2), Dense(2)</code>. How does accuracy cap out? Why?</li>
+            <li>Swap <code>Tanh</code> for <code>ReLU</code> - compare the shape of
+                the learned boundary in the chart.</li>
+            <li>Raise <code>NOISE_RATE</code> to 0.15 and watch the boundary get
+                smoother - the network refuses to chase extreme noise.</li>
+            <li>Increase the grid to 200&times;200 - does the boundary look sharper
+                or just slower to compute?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="iris-classifier.html">&larr; Iris Classifier</a></span>
+            <span>Next: <a href="house-price-classifier.html">House Price Classifier &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Projects</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+        tr:hover td { background: #f6f9fc; }
+        .project-card { border: 1px solid #e0e0e0; border-radius: 6px; padding: 15px; margin: 10px 0; background: #fafafa; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../index.html">Home</a>
+        <a href="../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../activations.html">Activation Functions</a>
+        <a href="../losses.html">Loss Functions</a>
+        <a href="../optimizers.html">Optimizers</a>
+        <a href="../neural-networks.html">Neural Networks</a>
+        <a href="../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../regressor.html">Regressor</a>
+        <a href="../datasets.html">Datasets</a>
+        <a href="../training.html">Training Features</a>
+        <a href="../advanced-layers.html">Advanced Layers</a>
+        <a href="../graph-builder.html">Graph Builder</a>
+        <a href="../nlp.html">NLP</a>
+        <a href="../transformers.html">Transformers</a>
+        <a href="projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Popular ML Projects with tensorflow-capi-java</h1>
+
+        <p>Seventeen complete, runnable machine learning projects built from scratch on the
+        TensorFlow C API Java wrapper - no Python, no SavedModel, pure Java + native
+        TensorFlow. Each project lives in its own Maven folder next to this page and
+        has a step-by-step tutorial.</p>
+
+        <table>
+            <tr><th>#</th><th>Project</th><th>Category</th><th>Key techniques</th><th>Tutorial</th></tr>
+            <tr><td>1</td><td><a href="iris-classifier/">iris-classifier</a></td><td>Tabular classification</td>
+                <td>MLP, feature standardization, confusion matrix</td><td><a href="tutorials/iris-classifier.html">Tutorial 1</a></td></tr>
+            <tr><td>2</td><td><a href="xor-decision-boundary/">xor-decision-boundary</a></td><td>Fundamentals</td>
+                <td>Hidden layers, Tanh, decision surface chart</td><td><a href="tutorials/xor-decision-boundary.html">Tutorial 2</a></td></tr>
+            <tr><td>3</td><td><a href="house-price-classifier/">house-price-classifier</a></td><td>Regression &rarr; classification</td>
+                <td>Synthetic data, price bands, tertiles</td><td><a href="tutorials/house-price-classifier.html">Tutorial 3</a></td></tr>
+            <tr><td>4</td><td><a href="mnist-digit-cnn/">mnist-digit-cnn</a></td><td>Computer vision</td>
+                <td>CNN, Conv2D + MaxPool, 98%+ accuracy</td><td><a href="tutorials/mnist-digit-cnn.html">Tutorial 4</a></td></tr>
+            <tr><td>5</td><td><a href="wine-quality/">wine-quality</a></td><td>Tabular classification</td>
+                <td>BatchNorm, Dropout, imbalanced classes</td><td><a href="tutorials/wine-quality.html">Tutorial 5</a></td></tr>
+            <tr><td>6</td><td><a href="fashion-mnist-cnn/">fashion-mnist-cnn</a></td><td>Computer vision</td>
+                <td>DepthwiseConv2D separable convolutions</td><td><a href="tutorials/fashion-mnist-cnn.html">Tutorial 6</a></td></tr>
+            <tr><td>7</td><td><a href="sentiment-analyzer/">sentiment-analyzer</a></td><td>NLP</td>
+                <td>Embedding layer, tokenization, padding</td><td><a href="tutorials/sentiment-analyzer.html">Tutorial 7</a></td></tr>
+            <tr><td>8</td><td><a href="airline-lstm/">airline-lstm</a></td><td>Time series</td>
+                <td>LSTM, sliding windows, chronological split</td><td><a href="tutorials/airline-lstm.html">Tutorial 8</a></td></tr>
+            <tr><td>9</td><td><a href="fraud-detection/">fraud-detection</a></td><td>Anomaly / imbalance</td>
+                <td>Class imbalance, precision/recall, thresholds</td><td><a href="tutorials/fraud-detection.html">Tutorial 9</a></td></tr>
+            <tr><td>10</td><td><a href="churn-prediction/">churn-prediction</a></td><td>Business analytics</td>
+                <td>One-hot encoding, mixed features</td><td><a href="tutorials/churn-prediction.html">Tutorial 10</a></td></tr>
+            <tr><td>11</td><td><a href="house-price-regressor/">house-price-regressor</a></td><td>Regression</td>
+                <td>Regressor, EarlyStopping, LR schedules, weight decay, R&sup2;</td><td><a href="tutorials/house-price-regressor.html">Tutorial 11</a></td></tr>
+            <tr><td>12</td><td><a href="autoencoder-small-images/">autoencoder-small-images</a></td><td>Representation learning</td>
+                <td>Denoising autoencoder, latent bottleneck, BatchNorm, PSNR</td><td><a href="tutorials/autoencoder-small-images.html">Tutorial 12</a></td></tr>
+            <tr><td>13</td><td><a href="news-topic-classifier/">news-topic-classifier</a></td><td>NLP</td>
+                <td>Vocabulary, Embedding vs LSTM, multi-class text</td><td><a href="tutorials/news-topic-classifier.html">Tutorial 13</a></td></tr>
+            <tr><td>14</td><td><a href="char-lm-text-generator/">char-lm-text-generator</a></td><td>NLP - generative</td>
+                <td>Character LM, sliding windows, temperature sampling</td><td><a href="tutorials/char-lm-text-generator.html">Tutorial 14</a></td></tr>
+            <tr><td>15</td><td><a href="sequence-transducer/">sequence-transducer</a></td><td>NLP - seq2seq</td>
+                <td>Task-conditioned encoder-decoder, reverse &amp; sort</td><td><a href="tutorials/sequence-transducer.html">Tutorial 15</a></td></tr>
+            <tr><td>16</td><td><a href="toy-translator/">toy-translator</a></td><td>NLP - translation</td>
+                <td>Parallel corpus, lexical + word-order mapping</td><td><a href="tutorials/toy-translator.html">Tutorial 16</a></td></tr>
+            <tr><td>17</td><td><a href="attention-vs-lstm/">attention-vs-lstm</a></td><td>Transformers</td>
+                <td>SelfAttention stack vs LSTM, retrieval convergence</td><td><a href="tutorials/attention-vs-lstm.html">Tutorial 17</a></td></tr>
+        </table>
+
+        <h2>How to Run Any Project</h2>
+        <pre>cd C:\Users\dell\Desktop\tfcapi-docs\projects\&lt;project-name&gt;
+run.cmd</pre>
+        <p>Each <code>run.cmd</code> sets <code>TF_CAPI_NATIVE_DIR</code> to the TensorFlow
+        native DLL folder, then runs <code>mvn compile exec:java</code>. Requirements:
+        JDK 17+, Maven on PATH.</p>
+
+        <h2>Shared Concepts</h2>
+        <ul>
+            <li>Classification models use <code>Sequential</code>; the
+                regression and autoencoder projects use
+                <code>Regressor</code>. Both train via <code>fit()</code>;
+                gradients come from TensorFlow's native
+                <code>TF_AddGradients</code>.</li>
+            <li>Datasets are either bundled in <code>src/main/resources/data/</code>,
+                generated deterministically in code, or loaded from the local
+                MNIST/Fashion-MNIST folders.</li>
+            <li>Evaluation always ends with a metrics report and (where useful) a
+                confusion matrix via <code>Metrics.printReport</code>.</li>
+        </ul>
+
+        <p>New here? Start with <a href="tutorials/iris-classifier.html">Tutorial 1 -
+        Iris Classification</a>, then follow the Next links at the bottom of each page.
+        For continuous-target prediction, jump straight to
+        <a href="tutorials/house-price-regressor.html">Tutorial 11 - House Price
+        Regression</a>.</p>
+    </div>
+    </div>
+</body>
+</html>

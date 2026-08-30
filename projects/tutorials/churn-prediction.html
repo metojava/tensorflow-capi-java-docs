@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 10 - Churn Prediction</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 10 - Telecom Customer Churn Prediction</h1>
+
+        <h2>Project Overview</h2>
+        <p>Predict whether a telecom customer will cancel their contract
+        (<em>churns</em>) or stay (<em>stays</em>). Churn is the classic business
+        ML problem: retaining an existing subscriber is far cheaper than
+        acquiring a new one, so the model's job is to produce a ranked risk list
+        the retention team can act on. The dataset is synthetic (seed 21,
+        2,000 customers) generated from a hidden sigmoid formula plus label
+        noise - so we know the ground truth and can verify the network
+        rediscovers it.</p>
+
+        <h2>The Dataset and the Hidden Formula</h2>
+        <p>Each customer carries five raw fields:</p>
+        <table>
+            <tr><th>Field</th><th>Range / values</th><th>Type</th></tr>
+            <tr><td>tenureMonths</td><td>1..72</td><td>numeric</td></tr>
+            <tr><td>monthlyCharges</td><td>$20..$120</td><td>numeric</td></tr>
+            <tr><td>contract</td><td>0 month / 1 one-yr / 2 two-yr</td><td>categorical</td></tr>
+            <tr><td>techSupport</td><td>0/1</td><td>binary flag</td></tr>
+            <tr><td>streaming</td><td>0/1</td><td>binary flag</td></tr>
+        </table>
+        <p>The label is drawn Bernoulli from a noisy churn probability:</p>
+        <pre>p = sigmoid(0.04*(charges-60) - 0.05*tenure
+            + 0.9*(contract==month-to-month)
+            - 0.6*techSupport + 0.3*streaming - 2.2) + small noise
+label = random() &lt; p ? CHURN : STAY</pre>
+        <p>Reading the coefficients teaches intuition: each extra month of tenure
+        reduces risk, high monthly charges raise it, being off a lock-in contract
+        is a big risk factor (+0.9), while having tech support subscribed protects
+        (-0.6). Only ~10% of customers churn - another imbalanced problem.</p>
+
+        <h2>One-Hot Encoding Rationale</h2>
+        <p>The contract column holds categories <code>{0,1,2}</code>. Feeding it
+        to the network as a single number would assert <strong>false
+        ordinality</strong>: the model would treat two-year (2) as "more than"
+        month-to-month (0) and interpolate across meaningless orderings.
+        One-hot encoding gives each category its own weight:</p>
+        <pre>contract=0 -> [1, 0, 0]      "free to leave"     gets weight w_month
+contract=1 -> [0, 1, 0]      one-year contract   gets weight w_1yr
+contract=2 -> [0, 0, 1]      two-year contract   gets weight w_2yr</pre>
+        <p>Binary flags already are 0/1 and stay as-is. Numeric columns get
+        z-scored with training-set statistics. The final input vector has
+        <strong>2 + 3 + 2 = 7 features</strong>:</p>
+        <pre>[tenureStd, chargesStd, isMonth, is1yr, is2yr, techSupport, streaming]</pre>
+
+        <h2>A Mixed Feature Pipeline</h2>
+        <p>Real tabular data always mixes scales and types, so preparation must
+        be per-column-type:</p>
+        <ol>
+            <li><strong>Numerics</strong> - standardize with train stats, reuse on
+                test (and on new customers at prediction time via the same
+                mean/std).</li>
+            <li><strong>Categoricals</strong> - one-hot; never rescale a one-hot
+                column, it would distort its meaning.</li>
+            <li><strong>Flags</strong> - pass through unchanged.</li>
+        </ol>
+        <p>The project builds every row through one
+        <code>encodeStandardized(...)</code> helper so training data, test data
+        and the demo predictions at the end share identical encoding logic -
+        the single most common source of silent bugs in feature pipelines.</p>
+
+        <h2>Model Architecture and Training</h2>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.01f),
+        Sequential.Loss.SPARSE_CROSS_ENTROPY, 0.05f,   // mild label smoothing
+        new Input(7),
+        new Dense(16), new ReLU(),
+        new Dropout(0.2f),
+        new Dense(8), new ReLU(),
+        new Dense(2))) {
+
+    net.fit(trainX, trainY, 150, 32, testX, testY, true);
+}</pre>
+        <ul>
+            <li><strong>Label smoothing (0.05)</strong> stops the net from pushing
+                probabilities to exactly 0/1 on noisy labels; watch how it keeps
+                the validation loss flat instead of climbing.</li>
+            <li><strong>Dropout(0.2)</strong> regularizes the small 2,000-row set;
+                without it the model memorizes noise.</li>
+            <li><strong>Seeded 70/30 split</strong> (1,400 / 600) after a seeded
+                shuffle keeps runs reproducible.</li>
+        </ul>
+
+        <h2>Evaluation: Highlighting Churn Recall</h2>
+        <p><code>Metrics.printReport(loss, acc, conf, {"stays", "churns"})</code>
+        prints per-class metrics. Because churners are the minority (~10%), the
+        arg-max cut-off P(churn)&ge;0.50 catches only obvious cases:</p>
+        <pre>Accuracy:        0.89
+class         precision    recall        f1  support
+stays            0.92        0.97       0.94     544
+churns           0.33        0.16       0.22      56
+
+threshold P(churn)&gt;=0.50 -> churn recall=0.16 precision=0.33
+threshold P(churn)&gt;=0.35 -> churn recall=0.46 precision=0.31
+threshold P(churn)&gt;=0.25 -> churn recall=0.59 precision=0.26</pre>
+        <p>This is exactly how retention campaigns work in practice: nobody needs
+        a hard 0.5 verdict - they call the top-N riskiest customers. Lowering the
+        threshold trades some precision for much better recall, and the program
+        prints this sweep automatically. It also scores three brand-new customer
+        profiles so you can see the learned formula in action (short tenure +
+        expensive month-to-month &rarr; high P(churn)).</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\churn-prediction&gt; run.cmd</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically). Full runtime well
+        under a minute; no external data files needed.</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Remove label smoothing and watch val_loss climb again - explain
+                why overconfident wrong answers inflate cross-entropy.</li>
+            <li>Encode contract as a single ordinal column instead of one-hot and
+                compare accuracy - does the false ordering hurt?</li>
+            <li>Add a <code>numAdminCalls</code> feature correlated with
+                dissatisfaction, regenerate, and see if churn recall improves at
+                the 0.5 threshold.</li>
+            <li>Sort test customers by predicted P(churn) and compute lift@10%:
+                how many times richer in churners is the top decile than the
+                base rate?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="fraud-detection.html">&larr; Fraud Detection</a></span>
+            <span>Next: <a href="house-price-regressor.html">House Price Regressor &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

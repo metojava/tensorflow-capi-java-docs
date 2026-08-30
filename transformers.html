@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformers</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html" class="active">Transformers</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Transformers</h1>
+
+        <p>A Transformer replaces recurrence with <strong>attention</strong>:
+        every position of a sequence compares itself against every other
+        position in a single parallel step, so long-range dependencies become
+        one hop instead of a chain of hidden-state handoffs. This page explains
+        the architecture piece by piece, maps each component to what exists in
+        tensorflow-capi-java today, and shows what you can - and cannot - build
+        right now.</p>
+
+        <h2 id="anatomy">1. Anatomy of a Transformer Block</h2>
+        <pre>input [B,T,D]
+   |
+   |--&gt; Multi-Head Self-Attention      every position queries all others
+   |        Q,K,V = x&middot;Wq, x&middot;Wk, x&middot;Wv
+   |        scores = QK&#7481;/&radic;d_head     [B, heads, T, T]
+   |        weights = softmax(scores)
+   |        heads = weights&middot;V          concat --&gt; WO
+   |--&gt; Add &amp; LayerNorm                residual + per-position normalization
+   |--&gt; Feed-Forward                   Dense(dff) -&gt; ReLU -&gt; Dense(D)
+   |--&gt; Add &amp; LayerNorm
+   |
+output [B,T,D]      ...repeat N times, then task-specific head</pre>
+        <p>The decoder half adds two more pieces: <strong>masked</strong>
+        self-attention (positions may not peek at the future) and
+        <strong>cross-attention</strong>, where queries come from the decoder
+        but keys/values come from the encoder output. Position information,
+        which attention itself is blind to, is injected by
+        <strong>positional encodings</strong> added to the input.</p>
+
+        <h2 id="mapping">2. Component Map: Paper vs This Library</h2>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Component</th>
+                <th style="padding: 8px;">Status</th>
+                <th style="padding: 8px;">How</th>
+            </tr>
+            <tr><td style="padding: 8px;">Scaled dot-product self-attention<br>(single head)</td>
+                <td style="padding: 8px;"><strong style="color:#0066cc;">Available</strong></td>
+                <td style="padding: 8px;"><code><a href="advanced-layers.html#selfattention">SelfAttention()</code></a>
+                    layer - trainable Q/K/V projections, residual, shape
+                    preserved. Verified by SelfTest.</td></tr>
+            <tr><td style="padding: 8px;">Feed-forward sub-layer</td>
+                <td style="padding: 8px;"><strong style="color:#0066cc;">Available</strong></td>
+                <td style="padding: 8px;"><code><a href="advanced-layers.html#densend">DenseND(n)</code></a>
+                    - position-wise Dense on any rank, weights shared across
+                    positions. Verified by SelfTest.</td></tr>
+            <tr><td style="padding: 8px;">Residual connections</td>
+                <td style="padding: 8px;"><strong style="color:#0066cc;">Built in</strong></td>
+                <td style="padding: 8px;"><code>SelfAttention</code> already
+                    adds its input back; <code>Residual</code> layer exists for
+                    arbitrary blocks.</td></tr>
+            <tr><td style="padding: 8px;">LayerNorm</td>
+                <td style="padding: 8px;"><span style="color:#c00;">Missing</span></td>
+                <td style="padding: 8px;"><code>BatchNorm1D</code> normalizes
+                    over the BATCH axis, not the feature axis - not the same
+                    thing. Would need a small new layer.</td></tr>
+            <tr><td style="padding: 8px;">Multi-head attention</td>
+                <td style="padding: 8px;"><strong style="color:#0066cc;">Available</strong></td>
+                <td style="padding: 8px;"><code><a href="advanced-layers.html#mha">MultiHeadAttention(heads[, causal])</code></a>
+                    - per-head column slices, rank-3 throughout.</td></tr>
+            <tr><td style="padding: 8px;">Positional encoding</td>
+                <td style="padding: 8px;"><strong style="color:#0066cc;">Available</strong></td>
+                <td style="padding: 8px;"><code><a href="advanced-layers.html#posenc">PositionalEncoding()</code></a>
+                    - parameter-free sinusoids baked into a constant tensor.</td></tr>
+            <tr><td style="padding: 8px;">Cross-attention<br>(encoder&rarr;decoder)</td>
+                <td style="padding: 8px;"><strong style="color:#0066cc;">Available*</strong></td>
+                <td style="padding: 8px;"><code><a href="advanced-layers.html#crossattention">CrossAttention(queryLen)</code></a>
+                    - queries from the leading segment attend to the trailing
+                    segment of ONE flow (*segment form; two-model cross-attention
+                    still needs GraphBuilder assembly).</td></tr>
+            <tr><td style="padding: 8px;">Masking / causal attention</td>
+                <td style="padding: 8px;"><strong style="color:#0066cc;">Available</strong></td>
+                <td style="padding: 8px;"><code>MultiHeadAttention(heads, true)</code>
+                    - upper-triangular <code>-1e9</code> mask before softmax.</td></tr>
+        </table>
+
+        <h2 id="today">3. What You Can Build Today</h2>
+
+        <h3>3.1 Attention-augmented recurrent nets (works now)</h3>
+        <p>The sweet spot with current pieces: self-attention blocks FIRST
+        (pairwise mixing on the intact sequence), then an LSTM for order-aware
+        summarization, then the head:</p>
+        <pre><code>try (Sequential net = new Sequential(Optimizer.adam(0.01f), 42L,
+        new Input3D(T, V),
+        new SelfAttention(),
+        new SelfAttention(),
+        new LSTM(48),
+        new Dense(classes))) { ... }</code></pre>
+
+        <h3>3.2 Pure attention classifier (works now, verified)</h3>
+        <p>For tasks that are ORDER-FREE, drop recurrence entirely. The
+        <a href="projects/tutorials/attention-vs-lstm.html">attention-vs-lstm</a>
+        project trains both stacks on needle-in-haystack retrieval
+        ("does the probe digit appear among these?"): both reach 100% test
+        accuracy, but the attention stack converges <strong>~2.6&times;
+        faster</strong> (early stop at epoch 52 vs 135).</p>
+        <pre><code>new Input3D(T, V),
+new SelfAttention(),
+new SelfAttention(),
+new Flatten(),
+new Dropout(0.2f),
+new Dense(24), new ReLU(),
+new Dense(2)</code></pre>
+
+        <h3>3.3 A hand-wired encoder block (advanced)</h3>
+        <p>Everything a Transformer block needs is expressible with public
+        ops - <code>BatchMatMulV2</code>, <code>Softmax</code>,
+        <code>Transpose</code>, <code>Mean</code>-based normalization,
+        <code>AddV2</code>. The <a href="graph-builder.html">GraphBuilder</a>
+        page's linear-regression demo shows the pattern: placeholders &rarr;
+        ops &rarr; <code>addGradients</code> &rarr; optimizer loop. A minimal
+        LayerNorm from primitives:</p>
+        <pre><code>// per-position feature normalization (LayerNorm-style):
+long mean = reduceMean(x, /*axis*/ 2);            // [B,T,1]
+long centered = gb.binary("Sub", ..., x, mean);
+long var = reduceMean(gb.binary("Mul", ..., centered, centered), 2);
+long norm = gb.binary("Mul", ..., centered,
+                      gb.unary("Rsqrt", ..., gb.binary("AddV2", ..., var, eps)));
+long out = gb.binary("AddV2", ..., gb.binary("Mul", ..., gammaBcast, norm), betaBcast);</code></pre>
+        <p>Note the reduction-axis gotcha from the GraphBuilder page: axes
+        constants must CARRY the axis value.</p>
+
+        <h2 id="roadmap">4. Roadmap to Full Transformers - COMPLETE</h2>
+        <p>Every piece of the paper architecture now exists as a Java-only
+        layer (all covered by SelfTest - 24 passed, 0 failed):</p>
+        <ul>
+            <li><strong>Shipped:</strong> PositionalEncoding, SelfAttention,
+                MultiHeadAttention (+ causal masking), LayerNorm1D, DenseND,
+                CrossAttention (segment form).</li>
+        </ul>
+        <p>A full Transformer-style encoder block is literally a one-liner
+        stack today:</p>
+        <pre><code>new Input3D(T, D),
+new PositionalEncoding(),
+new MultiHeadAttention(4),
+new LayerNorm1D(),
+new DenseND(64), new ReLU(),   // feed-forward sub-layer
+new DenseND(D),
+new LayerNorm1D(),
+... repeat blocks ... </code></pre>
+        <p>The one remaining frontier is TRUE two-model cross-attention (a
+        decoder attending to a separately-encoded input) - the segment-based
+        <code>CrossAttention</code> covers the common matching/retrieval cases,
+        while full seq2seq generation still needs GraphBuilder assembly or an
+        interface extension.</p>
+
+        <h2>5. Summary</h2>
+        <ul>
+            <li>Attention replaces sequential memory with pairwise lookup -
+                one hop to anywhere.</li>
+            <li>All core Transformer components are implemented and tested:
+                positional encoding, multi-head attention with causal masking,
+                layer normalization, position-wise feed-forward, and
+                cross-segment attention.</li>
+            <li>Verified end-to-end: SelfTest 24/24 including classification
+                through every new layer; retrieval via cross-attention at
+                &gt;90% accuracy.</li>
+            <li>Everything above is pure Java graph wiring - zero native
+                changes.</li>
+        </ul>
+        <p>Further reading: <em>Attention Is All You Need</em> (Vaswani et al.,
+        2017) - the paper that defined the architecture above.</p>
+    </div>
+</div>
+</body>
+</html>

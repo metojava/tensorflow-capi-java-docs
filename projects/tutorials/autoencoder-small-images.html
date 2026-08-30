@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 12 - Autoencoder for Small Images</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 12 - Autoencoder for Small Images</h1>
+
+        <h2>Project Overview</h2>
+        <p>An <strong>autoencoder</strong> squeezes each input through a narrow
+        latent code and then reconstructs it. There are no class labels at all:
+        the network's target is the input itself. That makes it a regression
+        problem in disguise - which is why this project trains the library's
+        <code><a href="../../regressor.html">Regressor</a></code> on flattened
+        pixel values instead of a classifier. The twist added here is
+        <strong>denoising</strong>: the network sees corrupted inputs but is
+        graded against clean targets, so it must learn what patterns
+        <em>should</em> look like.</p>
+
+        <h2>Synthetic Image Dataset</h2>
+        <p>The seeded generator (seed 42) draws 1,280 images of 12&times;12
+        grayscale pixels from three pattern families, with random &plusmn;1
+        pixel jitter and light sensor noise:</p>
+        <table>
+            <tr><th>Pattern</th><th>Description</th></tr>
+            <tr><td>cross</td><td>diagonal X across the canvas (brightness 0.95)</td></tr>
+            <tr><td>box</td><td>rectangle outline rows/cols 2..9 (0.9)</td></tr>
+            <tr><td>disc</td><td>filled circle of radius ~3.2 centered mid-canvas (0.85)</td></tr>
+        </table>
+        <p>All pixels sit on a dim 0.08 background; per-pixel Gaussian noise
+        (&sigma; = 0.05) simulates sensor grain. Everything is clamped to
+        [0,&nbsp;1]. A seeded
+        <code>Datasets.trainTestSplit(1280, 0.3, 7L)</code> produces 896 train
+        / 384 test images (sizes chosen as multiples of batch 32).</p>
+
+        <h2>Denoising Setup</h2>
+        <pre>float[] trainNoisy = addNoise(trainClean, 0.25f, 123L);
+float[] testNoisy  = addNoise(testClean,  0.25f, 124L);
+...
+net.fit(trainNoisy, trainClean, epochs, 32,
+        testNoisy, testClean, true, es);   // noisy in, clean out</pre>
+        <ul>
+            <li><strong>Inputs are corrupted</strong> with heavier noise
+                (&sigma; = 0.25) than the generator ever used.</li>
+            <li><strong>Targets stay clean</strong>, so the only way to score
+                well is to recover structure and drop the noise.</li>
+            <li>The same trained weights give you both skills: feed them clean
+                images for plain reconstruction, noisy ones for denoising.</li>
+        </ul>
+
+        <h2>The Hourglass Network</h2>
+        <pre>try (Regressor net = new Regressor(opt, 42L,
+        new Input(144),
+        new Dense(64), new BatchNorm1D(), new ReLU(),
+        new Dense(24), new ReLU(),                 // latent code
+        new Dense(64), new BatchNorm1D(), new ReLU(),
+        new Dense(144))) {                         // linear output</pre>
+        <pre>input 144 px --> 64 --> 24 (latent!) --> 64 --> 144 px
+       encoder ~6x compression ^        ^ decoder mirror</pre>
+        <ul>
+            <li><strong>Bottleneck of 24 units:</strong> 144 pixels must pass
+                through 24 numbers - a 6&times; compression that forces the net
+                to learn pattern prototypes rather than copy pixels.</li>
+            <li><strong>BatchNorm1D</strong> between Dense and ReLU keeps the
+                hidden activations standardized while training (batch stats)
+                and uses running averages at inference - see
+                <a href="../../training.html">Training Features</a> and
+                <a href="../../advanced-layers.html">Advanced Layers</a>.</li>
+            <li><strong>Linear output head</strong> (<code>Dense(144)</code>,
+                no activation): reconstruction is unbounded regression;
+                squashing through a sigmoid would fight the MSE gradient near
+                saturation.</li>
+            <li>No weight decay here - unlike price prediction, reconstruction
+                favors unshrunk weights; gradient clipping stays as a safety
+                net (<code>opt.setGradClipNorm(5f)</code>).</li>
+        </ul>
+
+        <h2>Training Loop Details</h2>
+        <ul>
+            <li>Cosine LR schedule: <code>LrSchedule.cosine(epochs, 0.05f)</code>.</li>
+            <li><code>EarlyStopping.valLoss(15, true)</code> monitors validation
+                MSE computed on <em>noisy inputs vs clean targets</em> - exactly
+                the skill we care about. In the default run it stops at epoch
+                90 (best val MSE 0.00879 at epoch 75) out of a 150-epoch
+                budget.</li>
+            <li><code>net.setTraining(false)</code> before evaluation switches
+                BatchNorm layers to their running statistics.</li>
+        </ul>
+
+        <h2>Evaluation and ASCII Previews</h2>
+        <pre>Denoising  : RMSE 0.0943 | PSNR 20.51 dB
+Reconstruct: RMSE 0.0923 | PSNR 20.70 dB</pre>
+        <p>Both error modes land far below the injected noise (&sigma; =
+        0.25&nbsp;&rarr;&nbsp;RMSE 0.25 if the net just echoed its input).
+        PSNR = <code>10*log10(1/MSE)</code> expresses quality in decibels;
+        every +6&nbsp;dB roughly halves the RMSE. Sample output (original |
+        denoised, brightness ramp <code>&nbsp;.:-=+*#@</code>):</p>
+<pre>test image 2 (box)   original | denoised
+   #@@@@@@@.  |     @@#@#@##
+   @ .... @   |     #      #
+   @   .  #.  |     #      #
+. .@    . #   |     #      #
+. .#      @   |     #      #
+. .@      @   |     @      #
+  .@ .    @   |     @      #
+...#@@@@@@@   |     ##@##@## </pre>
+        <p>The salt-and-pepper specks vanish, the outline snaps into place, and
+        the reconstruction even cleans up the jittered original's ragged
+        edges.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\autoencoder-small-images&gt; run.cmd
+rem or with a custom epoch budget:
+run.cmd 80</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Shrink the latent to 8 units - at what point do the three
+                patterns blur into one another?</li>
+            <li>Raise the corruption &sigma; to 0.4. Where does denoising
+                RMSE cross the reconstruct RMSE?</li>
+            <li>Remove both <code>BatchNorm1D</code> layers and compare the
+                val-loss curve shape and final PSNR.</li>
+            <li>Train without noise (plain autoencoder) and verify the model
+                no longer removes noise at test time - denoising must be part
+                of the training objective.</li>
+            <li>Add a fourth pattern family of your own design; does the
+                latent bottleneck still separate all four cleanly?</li>
+            <li>Use the 24-D latent codes as features for a small classifier
+                that predicts the pattern type - how accurate is it compared
+                to classifying raw pixels?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="house-price-regressor.html">&larr; House Price Regressor</a></span>
+            <span>Next: <a href="news-topic-classifier.html">News Topic Classifier &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loss Functions</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html" class="active">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Loss Functions in TensorFlow C API Java</h1>
+        
+        <p>Loss functions measure the difference between predicted and actual values. The tensorflow-capi-java library supports multiple loss strategies through the <code>Sequential.Loss</code> enum.</p>
+        
+        <h2>1. Supported Loss Strategies</h2>
+        
+        <h3>1.1. SPARSE_CROSS_ENTROPY (Default)</h3>
+        <pre><code>// Default loss for multi-class classification with integer labels
+Sequential net = new Sequential(new Adam(0.001f),
+        layers,
+        Loss.SPARSE_CROSS_ENTROPY);  // or just new Sequential(optimizer, layers)</code></pre>
+        <p><strong>Formula:</strong> <code>L = -\log(p_{y})</code>, where <code>p_{y}</code> is the predicted probability for the true class</p>
+        <p><strong>Used with:</strong> Integer labels (0, 1, ..., K-1), softmax output layer</p>
+        <p><strong>Label Smoothing (optional):</strong></p>
+        <pre><code>// With label smoothing (eps = 0.1 adds 10% uniform noise)
+Sequential net = new Sequential(new Adam(0.001f), 
+        Loss.SPARSE_CROSS_ENTROPY, 0.1f, layers);</code></pre>
+        <p><strong>Effect:</strong> Prevents model from becoming overconfident, often improves generalization</p>
+        
+        <h3>1.2. SOFTMAX_MSE</h3>
+        <pre><code>// Mean squared error between softmax probabilities and one-hot targets
+Sequential net = new Sequential(new Adam(0.001f),
+        Loss.SOFTMAX_MSE, layers);</code></pre>
+        <p><strong>Formula:</strong> <code>L = \frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{K}(p_{ij} - y_{ij}^{one-hot})^2</code></p>
+        <p>Where <code>p_{ij}</code> is the softmax probability for class <code>j</code> sample <code>i</code>, and <code>y_{ij}^{one-hot}</code> is the one-hot target.</p>
+        <p><strong>Properties:</strong></p>
+        <ul>
+            <li>Square loss on probability outputs</li>
+            <li>Differentiable almost everywhere</li>
+            <li>Can be seen as a "distillation-style" loss</li>
+        </ul>
+        
+        <h3>1.3. SIGMOID_CROSS_ENTROPY</h3>
+        <pre><code>// Binary cross-entropy with sigmoid activation per class
+Sequential net = new Sequential(new Adam(0.001f),
+        Loss.SIGMOID_CROSS_ENTROPY, layers);</code></pre>
+        <p><strong>Formula:</strong> <code>L = -\frac{1}{N}\sum_{n=1}^{N}\sum_{k=1}^{K}[y_{nk}\log(\sigma(z_{nk})) + (1-y_{nk})\log(1-\sigma(z_{nk}))</code></p>
+        <p>Where <code>\sigma</code> is sigmoid, <code>z</code> are logits, and <code>y</code> are binary targets (0 or 1).</p>
+        <p><strong>Used for:</strong> Multi-label classification or when each class is independent</p>
+        
+        <h2>2. Loss Function Comparison</h2>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Loss Function</th>
+                <th style="padding: 8px;">Type</th>
+                <th style="padding: 8px;">Output Activation</th>
+                <th style="padding: 8px;">Label Format</th>
+                <th style="padding: 8px;">Best Use Case</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">SPARSE_CROSS_ENTROPY</td>
+                <td style="padding: 8px;">Classification</td>
+                <td style="padding: 8px;">Softmax</td>
+                <td style="padding: 8px;">Integer (0..K-1)</td>
+                <td style="padding: 8px;">Standard multi-class classification</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">SOFTMAX_MSE</td>
+                <td style="padding: 8px;">Classification (MSE on probs)</td>
+                <td style="padding: 8px;">Softmax</td>
+                <td style="padding: 8px;">Integer (0..K-1)</td>
+                <td style="padding: 8px;">Alternative to cross-entropy</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">SIGMOID_CROSS_ENTROPY</td>
+                <td style="padding: 8px;">Classification (multi-label)</td>
+                <td style="padding: 8px;">Sigmoid</td>
+                <td style="padding: 8px;">Binary (0/1) per class</td>
+                <td style="padding: 8px;">Multi-label or independent binary problems</td>
+            </tr>
+        </table>
+        
+        <h2>3. Implementation Details</h2>
+        
+        <h3>3.1. Building the Loss Operation</h3>
+        <pre><code>// From Sequential.java - buildLossOp method
+private long buildLossOp(GraphBuilder gb, Flow f, Loss loss, float labelSmoothing) {
+    long yPh = gb.placeholder("y", NativeTF.DT_INT32, Shape.of(-1));
+    long oneHot = graph.op("OneHot", gb.unique("onehot"))
+            .attrType("T", NativeTF.DT_FLOAT)
+            .attrType("TI", NativeTF.DT_INT32)
+            .attrInt("axis", -1)
+            .input(yPh)
+            .input(gb.constI32Vec("num_classes", numClasses))
+            .input(gb.constF32("on_value", 1.0f))
+            .input(gb.constF32("off_value", 0.0f))
+            .build();
+    oneHot = gb.unary("StopGradient", "onehot_sg", oneHot);
+    
+    // Apply label smoothing if requested
+    if (labelSmoothing > 0f && labelSmoothing < 1f) {
+        oneHot = gb.binary("Mul", "ls_mul", oneHot, gb.constF32(1f - labelSmoothing));
+        oneHot = gb.binary("Add", "ls_add", oneHot,
+                gb.constF32(labelSmoothing / numClasses));
+    }
+    
+    long softmax = gb.unary("Softmax", "softmax", f.op);
+    return loss.build(softmax, oneHot, numClasses);
+}</code></pre>
+        
+        <h3>3.2. Each Loss Strategy's Graph Construction</h2>
+        <h4>SPARSE_CROSS_ENTROPY</h4>
+        <pre><code>// LossOp.build() for SPARSE_CROSS_ENTROPY:
+long softmax = (float[]) args[0];
+float[] oneHot = (float[]) args[1];
+int numClasses = (int) args[2];
+
+// LogSoftmax (numerically stable)
+long logSoftmax = gb.unary("LogSoftmax", "log_softmax", softmax);
+
+// Element-wise multiplication with one-hot
+long mul = gb.binary("Mul", "cel_mul", logSoftmax, oneHot);
+
+// Sum over classes (axis=-1 reduced to scalar per sample)
+long sum = gb.binary("Sum", "cel_sum", mul, gb.constI32Vec("ce_axis", 1));
+
+// Negate
+long neg = gb.unary("Neg", "cel_neg", sum);
+
+// Mean over batch
+long lossOp = graph.op("Mean", "loss")     // simplified - actual uses Mean with Tidx
+        .attrType("T", NativeTF.DT_FLOAT)
+        .attrType("Tidx", NativeTF.DT_INT32)
+        .input(neg)
+        .input(gb.constI32Vec("loss_axis", 0))
+        .build();</code></pre>
+        
+        <h4>SOFTMAX_MSE</h4>
+        <pre><code>// LossOp.build() for SOFTMAX_MSE:
+long softmax = (float[]) args[0];
+float[] oneHot = (float[]) args[1];
+
+// Compute (p - y_onehot)^2 element-wise
+long diff = gb.binary("Sub", "mse_diff", softmax, oneHot);
+long square = gb.unary("Square", "mse_square", diff);  // Square via Mul(diff, diff) or custom
+long mean = graph.op("Mean", "mse_mean")
+        .attrType("T", NativeTF.DT_FLOAT)
+        .input(square)
+        .build();</code></pre>
+        
+        <h4>SIGMOID_CROSS_ENTROPY</h4>
+        <pre><code>// LossOp.build() for SIGMOID_CROSS_ENTROPY:
+long softmax = (float[]) args[0];
+float[] oneHot = (float[]) args[1];
+
+// Apply sigmoid to logits
+long sigmoid = gb.unary("Sigmoid", "sigmoid", softmax);
+
+// Clip to avoid log(0)
+long eps = gb.constF32(1e-7f);
+long clipped = gb.binary("Add", "clip_eps", sigmoid, eps);  // simplified - actual uses max/min
+
+// Binary cross-entropy: -[y*log(p) + (1-y)*log(1-p)]
+long logPos = gb.unary("Log", "bce_log_pos", clipped);
+long logNeg = gb.unary("Log", "bce_log_neg", gb.binary("Sub", "one_minus", clipped, eps));
+long mulPos = gb.binary("Mul", "bce_mul_pos", oneHot, logPos);
+long mulNeg = gb.binary("Mul", "bce_mul_neg", gb.binary("Sub", "one_minus_y", oneHot, eps), logNeg);
+long sum = gb.binary("Add", "bce_sum", mulPos, mulNeg);
+long mean = graph.op("Mean", "bce_mean")
+        .attrType("T", NativeTF.DT_FLOAT)
+        .input(sum)
+        .build();</code></pre>
+        
+        <h2>4. Choosing the Right Loss</h2>
+        <ul>
+            <li><strong>Standard multi-class classification:</strong> Use <code>SPARSE_CROSS_ENTROPY</code> (default)</li>
+            <li><strong>Label smoothing regularization:</strong> Add <code>labelSmoothing=0.1</code> to <code>SPARSE_CROSS_ENTROPY</code></li>
+            <li><strong>Alternative divergence measure:</strong> Try <code>SOFTMAX_MSE</code></li>
+            <li><strong>Multi-label / independent binary problems:</strong> Use <code>SIGMOID_CROSS_ENTROPY</code></li>
+        </ul>
+        
+        <h2>4. Implementation Example (Full)</h2>
+        <pre><code>// Complete Sequential with custom loss and label smoothing
+try (Sequential net = new Sequential(new Adam(0.001f),
+        Loss.SPARSE_CROSS_ENTROPY, 0.1f,  // Adam lr=0.001, cross-entropy, 10% label smoothing
+        new Input4D(28, 28, 1),
+        new Conv2D(16, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Conv2D(32, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Flatten(),
+        new Dense(128), new ReLU(),
+        new Dropout(0.25f),
+        new Dense(10))) {  // 10 output classes
+    
+    // Train
+    History history = net.fit(trainX, trainY, 10, 128, testX, testY, true);
+    
+    // Evaluate
+    Metrics.printReport(history.finalTrainLoss(), history.finalValLoss(), 
+            confusionMatrix, classNames);
+}</code></pre>
+        
+        <h2>5. Checkpoint Compatibility</h2>
+        <p>The checkpoint format version was bumped to 2 to support loss type persistence:</p>
+        <ul>
+            <li><strong>v1 checkpoints:</strong> Loaded silently, loss defaults to <code>SPARSE_CROSS_ENTROPY</code></li>
+            <li><strong>v2 checkpoints:</strong> Save and restore the loss type and label smoothing value</li>
+        </ul>
+        <pre><code>// Saving a checkpoint with custom loss
+net.saveTo(Path.of("my_model.bin"));
+
+// Loading (automatically handles v1 and v2)
+Sequential loaded = Sequential.loadFrom(Path.of("my_model.bin"), optimizer);</code></pre>
+    </div>
+</div>
+</body>
+</html>

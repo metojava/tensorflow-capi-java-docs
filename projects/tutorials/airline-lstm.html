@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 8 - Airline LSTM</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 8 - Airline Passengers with an LSTM</h1>
+
+        <h2>Project Overview</h2>
+        <p>The classic airline-passengers dataset records monthly international passenger
+        counts from 1949 to 1960 (144 points). Instead of forecasting the exact count, this
+        project predicts the <em>direction</em> of the next month-over-month change:
+        <strong>up</strong> if <code>p[t+1] &gt; p[t]</code>, otherwise
+        <strong>down</strong>. That turns the series into a binary classification problem -
+        143 examples - solved with an LSTM that reads a short window of recent changes.</p>
+
+        <h2>From Time Series to Supervised Examples</h2>
+        <p>The raw series is transformed twice:</p>
+        <ol>
+            <li><strong>Deltas</strong> - <code>delta[i] = p[i+1] - p[i]</code>, giving 143
+                month-over-month changes. Deltas remove the strong upward trend and center
+                the problem on what we actually want to predict.</li>
+            <li><strong>Sliding windows</strong> - example <code>t</code> is the six values
+                <code>delta[t-5..t]</code> packed into a sequence of shape
+                <code>[6,1]</code>; its label is the sign of <code>delta[t]</code>. Early
+                examples repeat their oldest available delta instead of going out of bounds.</li>
+        </ol>
+        <pre>deltas:   +6  +14 +(-3) +(-8) +14 ...          <- 143 values
+window t=9: [+14, -8, +14, +13, +12, +9] -> label: up</pre>
+        <p>Each delta is standardized as <code>(d - mean) / std</code> using statistics from
+        the training period only (mean 2.43, std 23.47), exactly like the tabular projects
+        standardized their feature columns.</p>
+
+        <h2>Why the Chronological Split Matters</h2>
+        <p>Tabular projects shuffled rows before splitting. A time series must
+        <strong>not</strong> be shuffled: the future may not leak into training. The first
+        100 examples (roughly 1949 through mid-1958) train the model; the last 43 are held
+        out for testing. Shuffling would let the network peek at later years' patterns and
+        report inflated accuracy.</p>
+
+        <h2>A Majority Baseline Keeps You Honest</h2>
+        <p>Before trusting any model, check what the dumbest reasonable strategy scores.
+        "Always predict the majority class seen in training" (<em>up</em>) reaches 58.1%
+        on the test period because airlines grew most months. Any real model must beat
+        that number - a network scoring below it has learned nothing useful.</p>
+
+        <h2>The LSTM Layer in Brief</h2>
+        <p>A vanilla RNN's hidden state tends to forget or explode over long sequences.
+        An LSTM adds a <em>cell state</em> guarded by three gates computed at every step:</p>
+        <ul>
+            <li><strong>Forget gate</strong> <code>f = sigmoid(...)</code> - how much of the old cell state survives.</li>
+            <li><strong>Input gate</strong> <code>i = sigmoid(...)</code> - how much of the new candidate enters.</li>
+            <li><strong>Output gate</strong> <code>o = sigmoid(...)</code> - how much of the cell state is revealed.</li>
+        </ul>
+        <pre>c = f &#8857; c' + i &#8857; tanh(candidate)      h = o &#8857; tanh(c)</pre>
+        <p>The additive update lets gradients flow across many steps unchanged, which is
+        what "long short-term memory" refers to.</p>
+
+        <h2>Model Architecture</h2>
+        <pre>Input3D(6,1)
+LSTM(8)                    unrolled over T=6 steps, output flattens to [batch, 6*8=48]
+Dense(16), ReLU
+Dense(2)                   down / up scores</pre>
+        <p>The LSTM emits all per-step hidden states concatenated - <code>[B, T*H]</code> =
+        <code>[B,48]</code> here - so the Dense layers afterwards see ordinary flat data,
+        just like the Embedding layer did in the sentiment project.</p>
+
+        <h2>Training Code Walkthrough</h2>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.01f),
+        new Input3D(WINDOW, 1),
+        new LSTM(8),
+        new Dense(16), new ReLU(),
+        new Dense(2))) {
+
+    net.fit(trainX, trainY, 200, 16, testX, testY, true);
+}</pre>
+        <ul>
+            <li><strong>No shuffle anywhere</strong> - fit() shuffles batch order internally,
+                which only permutes whole training examples within the train period and does
+                not move rows across the split boundary.</li>
+            <li><strong>200 epochs &times; batch 16</strong> - 7 steps per epoch over 100
+                training windows; finishes in seconds on CPU.</li>
+            <li><strong>Data layout</strong> - flat arrays: 100 rows &times; 6 deltas = 600
+                floats for training.</li>
+        </ul>
+
+        <h2>Evaluation</h2>
+        <p>Validation accuracy climbs within a handful of epochs and stabilizes far above
+        the baseline:</p>
+        <pre>Majority baseline (train class=up): test accuracy 0.581 (25/43)
+Epoch 200/200 - loss: 0.0000 - val_loss: 0.2354 - val_acc: 0.9767
+
+Accuracy:        0.9767          vs baseline 0.581
+
+Confusion matrix (rows = true label):
+             0     1
+  0         18     0       down: recall 1.000
+  1          1    24       up:   recall 0.960</pre>
+        <p>One honest caveat: the most recent delta in each window already hints at its own
+        sign, so part of this lift comes from reading the last input step rather than from
+        long-range memory. That is exactly why the tutorial reports the majority baseline -
+        it separates "the task is easy" from "the model is good". Try removing the last
+        window element (use <code>delta[t-5..t-1]</code>) to see how much harder true
+        one-step-ahead prediction becomes.</p>
+
+        <h2>Model Persistence</h2>
+        <p><code>net.saveTo(Path.of("target", "airline-lstm-model.bin"))</code> stores the
+        unrolled LSTM spec plus weights; reload with
+        <code>Sequential.loadFrom(path, Optimizer.adam(0.01f))</code>.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\airline-lstm&gt; run.cmd</pre>
+        <p>The CSV ships with the project at
+        <code>src/main/resources/data/airline-passengers.csv</code>. Requirements: Maven on
+        PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Shift the features to <code>delta[t-6..t-1]</code> so the label is truly unseen - how far does accuracy fall?</li>
+            <li>Predict scaled passenger counts instead of direction with a regression head - what changes?</li>
+            <li>Compare <code>LSTM(8)</code> against <code>RNN(8)</code> and <code>GRU(8)</code> on the same windows.</li>
+            <li>Extend the window to 12 months so the seasonal cycle fits inside one example.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="sentiment-analyzer.html">&larr; Sentiment Analyzer</a></span>
+            <span>Next: <a href="fraud-detection.html">Fraud Detection &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

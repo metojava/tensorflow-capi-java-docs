@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 17 - Attention vs LSTM</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 17 - Attention vs LSTM</h1>
+
+        <h2>Project Overview</h2>
+        <p>The first project built on the library's new
+        <code><a href="../../advanced-layers.html#selfattention">SelfAttention</a></code>
+        layer answers the obvious question: <em>when is attention actually
+        better than an LSTM?</em> The task chosen is needle-in-haystack
+        retrieval - position 0 holds a PROBE digit and the model must decide
+        whether that digit appears among the following payload digits. The
+        answer requires comparing one position against every other, which is
+        precisely what attention computes in a single hop while an LSTM has to
+        accumulate membership evidence in its hidden state.</p>
+
+        <h2>Dataset</h2>
+        <p>6,400 seeded samples over a 40-symbol alphabet. Each sample is a
+        length-16 sequence of one-hot planes (<code>T=16, V=40</code>): slot 0
+        carries the probe, slots 1..15 are distinct random digits that either
+        include the probe (label 1, ~50%) or avoid it (label 0). Split
+        5,120 / 1,280 with <code>Datasets.trainTestSplit(n, 0.2, 7L)</code>.</p>
+
+        <h2>Two Architectures, Identical Budgets</h2>
+        <pre>// A: mini-transformer - pairwise matching, no recurrence
+new Input3D(T, V),
+new SelfAttention(),
+new SelfAttention(),
+new Flatten(),
+new Dropout(0.2f),
+new Dense(24), new ReLU(),
+new Dense(2)
+
+// B: recurrent baseline
+new Input3D(T, V),
+new LSTM(32),
+new Flatten(),
+new Dropout(0.2f),
+new Dense(24), new ReLU(),
+new Dense(2)</pre>
+        <p>Both train with Adam(0.02) + weight decay 1e-4, identical seeds,
+        batch 32 and <code>EarlyStopping.valLoss(30, true)</code>. Note the
+        deliberate design choice: no positional encoding exists yet, so the
+        task is order-independent by construction.</p>
+
+        <h2>Evaluation</h2>
+        <pre>=== A: SelfAttention x2 (mini-transformer) ===
+ran 52/300 epochs - best val loss 0.0013
+Accuracy: 1.0000
+
+=== B: LSTM(32) ===
+ran 135/300 epochs - best val loss 0.0001
+Accuracy: 1.0000
+
+Test accuracy: attention 1.0000 | lstm 1.0000</pre>
+        <p>Both architectures eventually solve the task perfectly - the honest
+        differentiator is <strong>convergence speed: attention needed 2.6&times;
+        fewer epochs</strong> (early stop at 52 vs 135). That matches theory:
+        probe-to-payload matching is one attention hop but a many-step
+        recurrence chain.</p>
+
+        <h2>What We Learned Building It</h2>
+        <ul>
+            <li>Attention needs a task where PAIRWISE relations carry the
+                signal. Our first attempt (detect duplicates anywhere in a
+                sequence) stalled both models at chance until the dataset grew
+                4x - equality kernels are hard to bootstrap from scratch at
+                this scale without LayerNorm and learning-rate warmup (see
+                the <a href="../../transformers.html#roadmap">roadmap</a>).</li>
+            <li>Retrieval tasks are the sweet spot: content-based matching IS
+                the objective, so attention converges almost immediately once
+                projections align.</li>
+            <li>Weight decay + dropout mattered: both models initially
+                memorized the 5,120 training samples before regularization
+                tamed validation loss.</li>
+        </ul>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\attention-vs-lstm&gt; run.cmd
+rem or with a custom epoch budget:
+run.cmd 80</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically). Requires
+        tensorflow-capi-java build with SelfAttention (type code 31).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Increase payload length to 31 (T=32) - does the LSTM's
+                convergence gap widen faster than attention's?</li>
+            <li>Remove one of the two SelfAttention blocks - how much harder
+                is single-hop-only matching?</li>
+            <li>Raise weight decay to 1e-3 - does the smaller effective capacity
+                help or hurt generalization here?</li>
+            <li>Add a second probe digit (both must be present for label 1) -
+                attention should handle conjunctions more gracefully than the
+                LSTM. Verify.</li>
+            <li>Implement sinusoidal positional encodings as input features and
+                re-run - can attention now ALSO solve position-dependent
+                variants like "does position 3 hold the probe"?</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="toy-translator.html">&larr; Toy Translator</a></span>
+            <span><a href="../projects.html">Back to Projects &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

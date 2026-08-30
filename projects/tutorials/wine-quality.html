@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 5 - Wine Quality</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 5 - Red Wine Quality Classification</h1>
+
+        <h2>Project Overview</h2>
+        <p>The UCI red-wine-quality dataset is the classic &ldquo;messy real
+        data&rdquo; project: 1,599 Portuguese vinho verde wines, 11
+        physicochemical measurements each, and a human-assigned quality score from
+        3 to 8. It introduces two challenges the iris tutorial skipped - a
+        semicolon-separated CSV with quoted headers, and severe class imbalance.
+        The network also gains regularization layers (<code>BatchNorm1D</code> and
+        <code>Dropout</code>).</p>
+
+        <h2>The Dataset and Label Remapping</h2>
+        <p>The CSV ships with the project at
+        <code>src/main/resources/data/winequality-red.csv</code>. Columns are
+        separated by <strong>semicolons</strong> and the header names are quoted:</p>
+        <pre>"fixed acidity";"volatile acidity";"citric acid";"residual sugar";
+"chlorides";"free sulfur dioxide";"total sulfur dioxide";"density";
+"pH";"sulphates";"alcohol";"quality"
+7.4;0.7;0;1.9;0.076;11;34;0.9978;3.51;0.56;9.4;5</pre>
+        <p>All 11 measurement columns are inputs; the integer quality score becomes
+        the label after remapping into three bands:</p>
+        <table>
+            <tr><th>Raw quality</th><th>Band</th><th>Count (of 1599)</th></tr>
+            <tr><td>&le; 4</td><td>0 = low</td><td>63 (~4%)</td></tr>
+            <tr><td>5 - 6</td><td>1 = medium</td><td>1,319 (~82%)</td></tr>
+            <tr><td>&ge; 7</td><td>2 = high</td><td>217 (~14%)</td></tr>
+        </table>
+        <pre>// parse row -> quality int -> band
+int quality = Integer.parseInt(p[FEATURES].trim());
+y[i] = quality <= 4 ? 0 : (quality <= 6 ? 1 : 2);</pre>
+        <p>Collapsing ten sparse scores into three bands gives each class enough
+        examples to learn from - predicting raw scores 3..8 would leave classes
+        with fewer than 20 samples.</p>
+
+        <h2>Pipeline</h2>
+        <ol>
+            <li><strong>Seeded shuffle + 70/30 split</strong> - 1,120 train / 479
+                test rows, shuffled with seed 42 so every run is reproducible.</li>
+            <li><strong>Z-score standardization</strong> using training-set means
+                and stds only; the test set is transformed with those same
+                statistics. Total sulfur dioxide spans up to ~289 while density
+                hovers near 0.99 - without scaling, one feature dominates the
+                gradients.</li>
+        </ol>
+
+        <h2>Model Architecture</h2>
+        <pre>Input(11)
+  &#9492;&#9472; Dense(32), ReLU       wider first layer for 11 correlated features
+      BatchNorm1D()          normalizes activations between layers
+      Dropout(0.2)           randomly zeroes 20% of units during training
+Dense(16), ReLU              narrower second layer
+Dense(3)                     output: low / medium / high scores</pre>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.005f),
+        new Input(11),
+        new Dense(32), new ReLU(), new BatchNorm1D(), new Dropout(0.2f),
+        new Dense(16), new ReLU(),
+        new Dense(3))) {
+
+    net.fit(trainX, trainY, 120, 32, testX, testY, true);
+}</pre>
+        <ul>
+            <li><strong>BatchNorm1D</strong> re-centers and re-scales each hidden
+                activation across the mini-batch, stabilizing training and letting
+                the slightly-lower learning rate (0.005) converge smoothly.</li>
+            <li><strong>Dropout(0.2)</strong> fights overfitting: with only ~1,100
+                training rows the network can memorize them quickly. At inference
+                time dropout is disabled automatically
+                (<code>setTraining(false)</code> inside evaluation).</li>
+        </ul>
+
+        <h2>Evaluation: Why Accuracy Lies Here</h2>
+        <p>A naive model that predicts &ldquo;medium&rdquo; for every wine scores
+        <strong>~82% accuracy</strong> while being useless. Our trained network
+        reaches about 82% too - so did we learn anything? The confusion matrix and
+        per-class report answer that:</p>
+        <pre>Confusion matrix (rows = true label):
+             0     1     2
+  0          3    14     1      low: mostly swallowed by 'medium'
+  1          4   357    32      medium: strong
+  2          0    37    32      high: found less than half
+
+Per-class recall:  low 0.17 | medium 0.91 | high 0.46</pre>
+        <p>Reading it like an imbalanced-data practitioner:</p>
+        <ul>
+            <li><strong>Medium recall (0.91)</strong> confirms the bulk behavior -
+                but this class is 82% of the data, so high accuracy here was nearly
+                free.</li>
+            <li><strong>High recall (0.46)</strong> is the meaningful result: the
+                network finds genuinely good wines at roughly double the 14%
+                base rate, at the cost of some false positives.</li>
+            <li><strong>Low recall (0.17)</strong> is weakest because only 63 low
+                wines exist in total - 44 landed in the training split. With so few
+                positive examples, the model rationally defaults to
+                &ldquo;medium&rdquo; when unsure.</li>
+        </ul>
+        <p>Typical remedies for such skew: class-weighted loss, oversampling the
+        minority bands, or threshold tuning on predicted probabilities - all good
+        exercises below.</p>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\wine-quality&gt; run.cmd</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Remove <code>Dropout</code> and compare train vs validation loss -
+                how much sooner does it overfit?</li>
+            <li>Duplicate low-band rows 4&times; in the training set (simple
+                oversampling). What happens to low-class recall?</li>
+            <li>Merge low+medium into a binary task (fine vs not-fine). Does
+                accuracy become more or less honest?</li>
+            <li>Raise dropout to 0.4 and lower epochs - plot val_acc curves for
+                both settings.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>Previous: <a href="mnist-digit-cnn.html">&larr; MNIST Digit CNN</a></span>
+            <span>Next: <a href="fashion-mnist-cnn.html">Fashion-MNIST CNN &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Features - Seeds, Early Stopping, Schedules, Regularization</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html" class="active">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Training Features</h1>
+
+        <p>Beyond plain <code>fit()</code>, both <code>Sequential</code> and
+        <code><a href="regressor.html">Regressor</a></code> expose the training
+        controls you normally reach for once a baseline works: reproducible
+        seeding, early stopping, learning-rate schedules, gradient clipping,
+        weight decay and layer freezing.</p>
+
+        <h2 id="seeds">1. Seeded, Reproducible Training</h2>
+        <p>Two sources of randomness exist: weight initialization (once, at
+        construction) and epoch shuffling (every epoch). Fixing both makes a
+        run bit-for-bit reproducible:</p>
+        <pre><code>// Seed 42L fixes Glorot weight initialization
+try (Sequential net = new Sequential(Optimizer.adam(0.01f), 42L,
+        new Input(4), new Dense(32), new ReLU(), new Dense(3))) {
+
+    net.setShuffleSeed(42L);   // same batch order every epoch, every run
+    net.fit(trainX, trainY, 100, 32, testX, testY, true);
+}</code></pre>
+        <ul>
+            <li><code>new Sequential(optimizer)</code> and
+                <code>new Regressor(optimizer)</code> default to seed 42.</li>
+            <li>The full constructors accept the seed explicitly:
+                <code>Sequential(optimizer, loss, labelSmoothing, initSeed,
+                layers...)</code>.</li>
+            <li>Same seed + same data = identical training. Change only the seed
+                to measure how stable your metrics really are.</li>
+        </ul>
+
+        <h2 id="earlystopping">2. EarlyStopping</h2>
+        <p><code>EarlyStopping</code> is a Keras-style callback passed to the
+        <code>fit</code> overloads that accept it. Training stops when the
+        monitored validation metric fails to improve for <code>patience</code>
+        consecutive epochs. It doubles as the result holder afterwards.</p>
+        <pre><code>EarlyStopping es = EarlyStopping.valLoss(10, true);   // patience 10, restore best
+
+History h = net.fit(trainX, trainY, 500, 32, valX, valY, true, es);
+
+System.out.println("stoppedEarly = " + es.stoppedEarly);
+System.out.println("best epoch   = " + es.bestEpoch);     // 0-based
+System.out.println("best score   = " + es.bestScore);
+System.out.println("epochs run   = " + h.epochsRun());   // &lt; 500 if stopped</code></pre>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Factory / field</th>
+                <th style="padding: 8px;">Meaning</th>
+            </tr>
+            <tr><td style="padding: 8px;"><code>valLoss(patience[, restore])</code></td>
+                <td style="padding: 8px;">Monitor validation loss (lower is
+                    better). Supported by both <code>Sequential</code> and
+                    <code>Regressor</code>.</td></tr>
+            <tr><td style="padding: 8px;"><code>valAccuracy(patience, restore)</code></td>
+                <td style="padding: 8px;">Monitor validation accuracy (higher is
+                    better). Classifier models.</td></tr>
+            <tr><td style="padding: 8px;"><code>patience</code></td>
+                <td style="padding: 8px;">How many non-improving epochs to
+                    tolerate before stopping (must be &ge; 1).</td></tr>
+            <tr><td style="padding: 8px;"><code>restoreBestWeights</code></td>
+                <td style="padding: 8px;">Snapshot parameters at every new best
+                    epoch and write them back when training ends, so the model
+                    you keep is the <em>best</em> one, not the last one.</td></tr>
+            <tr><td style="padding: 8px;"><code>minDelta</code></td>
+                <td style="padding: 8px;">Improvement smaller than this counts
+                    as no improvement (default 0).</td></tr>
+        </table>
+        <p>A validation set is required when early stopping is enabled - passing
+        <code>null</code> validation data throws
+        <code>IllegalArgumentException</code>. In practice you pass your test
+        split as the monitored set in small projects, or hold out a dedicated
+        third split for honest final evaluation.</p>
+        <pre><code>// Typical pattern: generous epoch budget, let patience decide
+EarlyStopping es = EarlyStopping.valLoss(15, true);
+net.fit(trainX, trainY, 1000, 64, testX, testY, true, es);
+// returns as soon as val_loss plateaus ~15 epochs</code></pre>
+
+        <h2 id="schedules">3. Learning-Rate Schedules</h2>
+        <p>A <code>LrSchedule</code> expresses the learning rate as a
+        <em>fraction</em> of the optimizer's configured rate. Before every
+        epoch the model sets the effective rate to
+        <code>baseLr &times; fractionAt(epoch)</code>; Adam/momentum state is
+        preserved across changes (no re-initialization).</p>
+        <pre><code>net.setLrSchedule(LrSchedule.cosine(40, 0.01f)); // anneal to 1% over 40 epochs
+net.fit(trainX, trainY, 40, 64, testX, testY, true);</code></pre>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Factory</th>
+                <th style="padding: 8px;">Profile</th>
+            </tr>
+            <tr><td style="padding: 8px;"><code>LrSchedule.cosine(totalEpochs, minFraction)</code></td>
+                <td style="padding: 8px;">Smooth cosine anneal from 1.0 down to
+                    <code>minFraction</code>, then flat. The usual default -
+                    large steps early, fine steps late.</td></tr>
+            <tr><td style="padding: 8px;"><code>LrSchedule.step(every, factor)</code></td>
+                <td style="padding: 8px;">Classic staircase: multiply by
+                    <code>factor</code> every <code>every</code> epochs (e.g.
+                    halve every 10).</td></tr>
+            <tr><td style="padding: 8px;"><code>LrSchedule.exponential(factor)</code></td>
+                <td style="padding: 8px;"><code>factor^epoch</code> per epoch,
+                    factor slightly below 1 (e.g. 0.98).</td></tr>
+            <tr><td style="padding: 8px;"><code>LrSchedule.constant()</code></td>
+                <td style="padding: 8px;">Identity hook - handy to toggle a
+                    schedule off without restructuring code.</td></tr>
+            <tr><td style="padding: 8px;">Custom lambda</td>
+                <td style="padding: 8px;"><code>epoch -&gt; 1f / (1f + 0.05f * epoch)</code>
+                    - any <code>LrSchedule</code> is a single method.</td></tr>
+        </table>
+        <p>You can read back the current scaling with
+        <code>net.currentLrMultiplier()</code> (classifier models) or inspect
+        the optimizer's multiplier directly.</p>
+
+        <h2 id="clipping-decay">4. Gradient Clipping and Weight Decay</h2>
+        <p>Both controls live on the optimizer and apply to every step of every
+        model that uses it:</p>
+        <pre><code>Optimizer opt = Optimizer.adam(0.005f);
+opt.setGradClipNorm(5.0f);    // rescale grads when global norm exceeds 5
+opt.setWeightDecay(1e-4f);    // decoupled (AdamW-style) decay
+
+try (Regressor net = new Regressor(opt, 42L,
+        new Input(6), new Dense(64), new ReLU(), new Dense(1))) {
+    // ... fit() as usual
+}</code></pre>
+        <ul>
+            <li><strong>Gradient clipping</strong>
+                (<code>setGradClipNorm(maxNorm)</code>): if the L2 norm across
+                all gradient tensors exceeds <code>maxNorm</code>, all gradients
+                are scaled down by <code>maxNorm / norm</code>. Use it whenever
+                losses can spike - RNNs, high learning rates, noisy batches.
+                A value like 1..10 rarely hurts; 0 disables.</li>
+            <li><strong>Weight decay</strong>
+                (<code>setWeightDecay(decay)</code>): adds
+                <code>decay &times; param</code> to each gradient before the
+                update rule - decoupled weight decay, exactly the AdamW
+                formulation. It pulls weights toward zero each step, reducing
+                overfitting on small datasets. Typical range 1e-5 .. 1e-3;
+                0 disables.</li>
+        </ul>
+
+        <h2 id="freezing">5. Layer Freezing (Transfer Learning)</h2>
+        <p><code>setTrainable(layerIndex, trainable)</code> freezes/unfreezes
+        all parameters of one layer (index into the constructor list; the input
+        layer at index 0 has no parameters). Frozen layers simply receive zero
+        gradients - no recompilation, instant toggling:</p>
+        <pre><code>try (Sequential net = Sequential.loadFrom(Path.of("cnn.bin"),
+                                           Optimizer.adam(0.001f))) {
+
+    // Freeze everything up to layer 4 (indices 1..4), fine-tune the head:
+    for (int i = 1; i &lt;= 4; i++) net.setTrainable(i, false);
+
+    net.fit(newTrainX, newTrainY, 30, 64, testX, testY, true);
+
+    net.unfreezeAll();                       // optional full fine-tune pass
+    net.fit(newTrainX, newTrainY, 10, 64, testX, testY, true);
+}</code></pre>
+        <p>This enables the classic two-phase transfer recipe: load pretrained
+        weights, freeze the feature extractor, train only the dense head, then
+        optionally unfreeze and continue at a low learning rate.</p>
+
+        <h2>6. Putting It Together</h2>
+        <pre><code>Optimizer opt = Optimizer.adam(0.01f);
+opt.setWeightDecay(1e-4f);
+opt.setGradClipNorm(5f);
+
+try (Regressor net = new Regressor(opt, 42L,
+        new Input(6),
+        new Dense(64), new ReLU(),
+        new Dense(32), new ReLU(),
+        new Dense(1))) {
+
+    net.setShuffleSeed(42L);
+    net.setLrSchedule(LrSchedule.cosine(300, 0.01f));
+
+    EarlyStopping es = EarlyStopping.valLoss(20, true);
+    Regressor.RegressionHistory h =
+            net.fit(trainX, trainY, 300, 32, testX, testY, true, es);
+
+    System.out.printf("ran %d/%d epochs, best val MSE %.5f at epoch %d%n",
+            h.epochsRun(), 300, es.bestScore, es.bestEpoch + 1);
+}</code></pre>
+        <p>All of these features are exercised end-to-end in the
+        <a href="projects/tutorials/house-price-regressor.html">house-price-regressor</a>
+        showcase project.</p>
+    </div>
+</div>
+</body>
+</html>

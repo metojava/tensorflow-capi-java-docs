@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial 1 - Iris Classifier</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        .prevnext { display: flex; justify-content: space-between; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="../../index.html">Home</a>
+        <a href="../../ml-fundamentals.html">ML Fundamentals</a>
+        <a href="../../activations.html">Activation Functions</a>
+        <a href="../../losses.html">Loss Functions</a>
+        <a href="../../optimizers.html">Optimizers</a>
+        <a href="../../neural-networks.html">Neural Networks</a>
+        <a href="../../jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="../../regressor.html">Regressor</a>
+        <a href="../../datasets.html">Datasets</a>
+        <a href="../../training.html">Training Features</a>
+        <a href="../../advanced-layers.html">Advanced Layers</a>
+        <a href="../../graph-builder.html">Graph Builder</a>
+        <a href="../../nlp.html">NLP</a>
+        <a href="../../transformers.html">Transformers</a>
+        <a href="../projects.html" class="active">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Tutorial 1 - Iris Flower Classification</h1>
+
+        <h2>Project Overview</h2>
+        <p>Predict the species of an iris flower (<em>setosa</em>, <em>versicolor</em>, or
+        <em>virginica</em>) from four physical measurements. This is the "Hello World" of machine
+        learning: a small dataset (150 rows), a simple multi-layer perceptron, and a complete
+        end-to-end workflow - data loading, feature scaling, train/test splitting, training,
+        evaluation and model saving.</p>
+
+        <h2>The Dataset</h2>
+        <p>Fisher's Iris dataset ships with the project at
+        <code>src/main/resources/data/iris.data</code>. Each row holds four measurements
+        (centimeters) followed by the species label:</p>
+        <pre>5.1,3.5,1.4,0.2,Iris-setosa
+6.7,3.1,4.4,1.4,Iris-versicolor
+6.3,3.3,6.0,2.5,Iris-virginica</pre>
+        <table>
+            <tr><th>Feature</th><th>Column</th><th>Role</th></tr>
+            <tr><td>Sepal length</td><td>0</td><td>input x<sub>1</sub></td></tr>
+            <tr><td>Sepal width</td><td>1</td><td>input x<sub>2</sub></td></tr>
+            <tr><td>Petal length</td><td>2</td><td>input x<sub>3</sub></td></tr>
+            <tr><td>Petal width</td><td>3</td><td>input x<sub>4</sub></td></tr>
+            <tr><td>Species</td><td>4</td><td>label y &isin; {0,1,2}</td></tr>
+        </table>
+
+        <h2>Data Preparation</h2>
+        <p>Three preparation steps matter even on this tiny dataset:</p>
+        <ol>
+            <li><strong>Seeded shuffle</strong> - the CSV is grouped by species, so we shuffle
+                indices with a fixed seed (42) before splitting to get all three classes into
+                both sets while keeping results reproducible.</li>
+            <li><strong>105 / 45 split</strong> - 70% of rows train the network, 30% measure how
+                well it generalizes to flowers it has never seen.</li>
+            <li><strong>Z-score standardization</strong> - each feature is transformed to
+                <code>(value - mean) / std</code>. The statistics come from the <em>training set
+                only</em>; applying them to the test set prevents information leaking from the
+                future. Unscaled inputs slow convergence because gradient descent must find very
+                different step sizes per dimension.</li>
+        </ol>
+
+        <h2>Model Architecture</h2>
+        <pre>Input(4)
+  &#9492;&#9472; Dense(16), ReLU      hidden layer: learns feature combinations
+Dense(3)                    output layer: one score per class</pre>
+        <p>With only 4 inputs, 16 hidden units are plenty. The last layer has exactly
+        <code>numClasses = 3</code> units because <code>Sequential</code> reads the class count
+        from it and trains with sparse softmax cross-entropy over integer labels.</p>
+
+        <h2>Training Code Walkthrough</h2>
+        <p>The whole model fits in a few lines:</p>
+        <pre>try (Sequential net = new Sequential(Optimizer.adam(0.01f),
+        new Input(4),
+        new Dense(16), new ReLU(),
+        new Dense(3))) {
+
+    History h = net.fit(trainX, trainY,   // flat [rows*4] features, int[] labels
+                        150, 16,          // epochs, batch size
+                        testX, testY,     // validation split
+                        true);            // print one line per epoch
+}</pre>
+        <p>Key points:</p>
+        <ul>
+            <li><strong>Adam(0.01)</strong> adapts per-parameter learning rates; on small tabular
+                problems it converges faster than plain SGD.</li>
+            <li><strong>Data layout</strong> - tensors are flat <code>float[]</code> arrays in
+                row-major order; 105 samples &times; 4 features = 420 floats.</li>
+            <li><strong>fit()</strong> shuffles every epoch, slices mini-batches of 16, runs a
+                forward pass, computes gradients natively via <code>TF_AddGradients</code>,
+                applies the optimizer, then evaluates on the validation set.</li>
+        </ul>
+
+        <h2>Evaluation</h2>
+        <p>We fetch class probabilities with <code>net.predict(testX)</code> (returns
+        45&times;3 floats), take the arg-max per row, and accumulate a confusion matrix that
+        <code>Metrics.printReport</code> turns into accuracy, precision/recall/F1 per class:</p>
+        <pre>int pred = Metrics.argmax(probs, i * 3, 3);
+conf[testY[i]][pred]++;               // conf[true][predicted]</pre>
+        <p>Expected result after 150 epochs (exact numbers vary slightly by platform):</p>
+        <pre>Accuracy:        0.93
+Confusion matrix (rows = true label):
+             0     1     2
+  0          8     0     0      setosa perfectly separated
+  1          0    14     1
+  2          0     2    20</pre>
+        <p>Setosa is linearly separable from the other two species, so it always scores 100%.
+        Versicolor/virginica overlap slightly, which is where the few mistakes appear - exactly
+        what the confusion matrix visualizes.</p>
+
+        <h2>Model Persistence</h2>
+        <p><code>net.saveTo(Path.of("target", "iris-model.bin"))</code> writes the architecture
+        spec plus weights. Reload later without retraining:</p>
+        <pre>Sequential net = Sequential.loadFrom(Path.of("iris-model.bin"),
+                                     Optimizer.adam(0.01f));</pre>
+
+        <h2>How to Run</h2>
+        <pre>C:\Users\dell\Desktop\tfcapi-docs\projects\iris-classifier&gt; run.cmd</pre>
+        <p>Requirements: Maven on PATH and the TensorFlow native DLLs at
+        <code>libtensorflow-cpu-windows-x86_64\lib</code> (run.cmd points
+        <code>TF_CAPI_NATIVE_DIR</code> there automatically).</p>
+
+        <h2>Exercises</h2>
+        <ol>
+            <li>Remove standardization and compare the loss curve - how much slower does it converge?</li>
+            <li>Change the seed in <code>seededOrder(n, 42)</code> - how stable is test accuracy across splits?</li>
+            <li>Add a second hidden layer <code>Dense(8), new Tanh()</code> - does it help or overfit?</li>
+            <li>Train with <code>Sequential.Loss.SOFTMAX_MSE</code> instead of cross-entropy and compare.</li>
+        </ol>
+
+        <div class="prevnext">
+            <span>&nbsp;</span>
+            <span>Next: <a href="xor-decision-boundary.html">XOR Decision Boundary &rarr;</a></span>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphBuilder - Building Custom Graphs</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html" class="active">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>GraphBuilder - Custom Graph Assembly</h1>
+
+        <p><code>GraphBuilder</code> is the public class that
+        <code>Sequential</code> and <code><a href="regressor.html">Regressor</a></code>
+        use internally to assemble their TensorFlow graphs. It is public so you
+        can build your own ops and losses on the same foundation - adding a new
+        layer type or a custom objective requires <em>no native changes</em>,
+        only graph wiring in Java.</p>
+
+        <h2>1. Responsibilities</h2>
+        <ul>
+            <li><strong>Op accumulation</strong>: every helper creates a TF op
+                in the underlying <code>NativeGraph</code> and returns its
+                handle (<code>long</code>) for wiring into further ops.</li>
+            <li><strong>Parameter registry</strong>: trainable tensors created
+                through the builder are tracked; models fetch them with
+                <code>paramOps()/paramTensors()/paramShapes()</code>.</li>
+            <li><strong>Unique naming</strong>: <code>unique(base)</code>
+                appends a counter, preventing name collisions between layers.</li>
+            <li><strong>Seeded initialization</strong>: pass a seed to make all
+                random initializations (Glorot weights) reproducible.</li>
+        </ul>
+
+        <h2>2. API Overview</h2>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Method</th>
+                <th style="padding: 8px;">Purpose</th>
+            </tr>
+            <tr><td style="padding: 8px;"><code>GraphBuilder(graph[, seed])</code></td>
+                <td style="padding: 8px;">Wraps a <code>NativeGraph</code>; the
+                    seed controls weight-init randomness.</td></tr>
+            <tr><td style="padding: 8px;"><code>placeholder(name, dtype, shape)</code></td>
+                <td style="padding: 8px;">Input feed op (e.g. the model's
+                    <code>x</code>/<code>y</code>).</td></tr>
+            <tr><td style="padding: 8px;"><code>glorotParam(name, shape, fanIn, fanOut)</code></td>
+                <td style="padding: 8px;">Trainable parameter initialized
+                    Glorot-uniform:
+                    <code>limit = sqrt(6 / (fanIn + fanOut))</code>.</td></tr>
+            <tr><td style="padding: 8px;"><code>zerosParam(name, shape)</code></td>
+                <td style="padding: 8px;">Trainable parameter initialized to
+                    zeros (biases, BatchNorm beta).</td></tr>
+            <tr><td style="padding: 8px;"><code>onesParam(name, shape)</code></td>
+                <td style="padding: 8px;">Trainable parameter initialized to
+                    ones (BatchNorm gamma).</td></tr>
+            <tr><td style="padding: 8px;"><code>unary(type, name, in)</code> /
+                    <code>binary(type, name, a, b)</code></td>
+                <td style="padding: 8px;">Shorthands for elementwise TF kernels
+                    (<code>"Relu"</code>, <code>"Add"</code>,
+                    <code>"Mul"</code>, <code>"Sub"</code>, ...) with float
+                    dtype preconfigured.</td></tr>
+            <tr><td style="padding: 8px;"><code>constF32(name, v)</code> /
+                    <code>constI32Vec(name, vals...)</code> /
+                    <code>constInt32Tensor(name, values, shape)</code></td>
+                <td style="padding: 8px;">Constants for scalars, index vectors,
+                    shape tensors.</td></tr>
+            <tr><td style="padding: 8px;"><code>unique(base)</code></td>
+                <td style="padding: 8px;">Collision-free op name
+                    <code>base_&lt;n&gt;</code>.</td></tr>
+            <tr><td style="padding: 8px;"><code>graph()</code></td>
+                <td style="padding: 8px;">The underlying <code>NativeGraph</code>
+                    for building arbitrary ops fluently (op builder pattern:
+                    <code>op(type, name).attr(...).input(...).build()</code>).</td></tr>
+            <tr><td style="padding: 8px;"><code>paramCount()</code></td>
+                <td style="padding: 8px;">Parameters registered so far - used
+                    for per-layer attribution when freezing.</td></tr>
+            <tr><td style="padding: 8px;"><code>paramOps() / paramTensors() /
+                    paramShapes()</code></td>
+                <td style="padding: 8px;">Snapshot of all registered parameters
+                    as parallel arrays (feed handles, native tensors,
+                    shapes).</td></tr>
+        </table>
+
+        <h2>3. How Models Use It Internally</h2>
+        <p>A condensed sketch of what <code>Regressor</code>'s constructor does
+        with the builder:</p>
+        <pre><code>NativeGraph graph = new NativeGraph();
+GraphBuilder gb = new GraphBuilder(graph, seed);      // seeded init
+
+// input placeholder [-1, features]
+long xPh = gb.placeholder("x", NativeTF.DT_FLOAT, Shape.of(-1, 4));
+
+// one Dense(24) + ReLU stage, wired by hand:
+long w      = gb.glorotParam("dense_w", new long[]{4, 24}, 4, 24);
+long b      = gb.zerosParam("dense_b", new long[]{24});
+long z1     = gb.binary("MatMul", "z1", xPh, w);
+long z1b    = gb.binary("Add", "z1_bias", z1, b);
+long hidden = gb.unary("Relu", "a1", z1b);
+
+// targets + MSE loss
+long yPh   = gb.placeholder("y", NativeTF.DT_FLOAT, Shape.of(-1, 1));
+long pred  = ...;                                     // more layers...
+long diff  = gb.binary("Sub", "loss_diff", pred, yPh);
+long sq    = gb.binary("Mul", "loss_sq", diff, diff);
+
+// gradients for every registered parameter in one call
+long[] grads = graph.addGradients(lossOp, 0, gb.paramOps());</code></pre>
+        <p>The point: parameters are ordinary placeholder-fed native tensors.
+        The optimizer updates them in-place after each gradient step - nothing
+        is copied into Java during training.</p>
+
+        <h2>4. A Complete Standalone Example (Verified)</h2>
+        <p>The smallest useful custom graph - linear regression
+        <code>y = w&middot;x + b</code> built, trained and queried by hand.
+        This exact class compiles and runs against the 1.4.0 jar; it converges
+        to <code>y = 3.005x - 2.010</code> from noisy data generated with
+        <code>y = 3x - 2 + N(0, 0.3)</code>.</p>
+        <p><strong>Placement requirement:</strong> low-level tensor allocation
+        and reading (<code>NativeTF.allocTensorF32 / tensorDataF32 /
+        deleteTensor</code>) are deliberately package-private, so the class
+        must live in package <code>com.example.tfcapi</code> (drop it into
+        your source tree under that package - the same thing the library's own
+        SelfTest does).</p>
+        <pre><code>package com.example.tfcapi;
+
+import java.util.Arrays;
+import java.util.Random;
+
+public final class GraphLinearRegressionDemo {
+
+    public static void main(String[] args) {
+        // ---------- data: noisy line y = 3x - 2 -----------------------
+        Random rnd = new Random(42L);
+        int n = 100;
+        float[] X = new float[n];
+        float[] Y = new float[n];
+        for (int i = 0; i &lt; n; i++) {
+            X[i] = i / 20f - 2.5f;
+            Y[i] = 3f * X[i] - 2f + (float) rnd.nextGaussian() * 0.3f;
+        }
+
+        // ---------- graph: pred = x.w + b, loss = mean((pred-y)^2) ----
+        try (NativeGraph g = new NativeGraph()) {
+            GraphBuilder gb = new GraphBuilder(g, 42L); // seeded init
+
+            long xPh = gb.placeholder("x", NativeTF.DT_FLOAT,
+                    Shape.of(-1, 1));
+            long yPh = gb.placeholder("y", NativeTF.DT_FLOAT,
+                    Shape.of(-1, 1));
+            long w = gb.glorotParam("w", new long[]{1, 1}, 1, 1);
+            long b = gb.zerosParam("b", new long[]{1});
+            long pred = gb.binary("Add", "pred",
+                    gb.binary("MatMul", "mm", xPh, w), b);
+
+            long diff = gb.binary("Sub", "diff", pred, yPh);
+            long sq = gb.binary("Mul", "sq", diff, diff);
+            long loss = gb.graph.op("Mean", gb.unique("loss"))
+                    .attrType("T", NativeTF.DT_FLOAT)
+                    .attrType("Tidx", NativeTF.DT_INT32)
+                    .input(sq)
+                    // GOTCHA: the axes constant must CARRY the value 0
+                    // (values {0}, empty shape). An EMPTY int tensor
+                    // reduces nothing - gradients then explode.
+                    .input(gb.constInt32Tensor("axes",
+                            new int[]{0}, new long[]{}))
+                    .build();
+
+            // ---------- d(loss)/d(w,b) for every parameter -------------
+            long[] params = gb.paramOps();                 // [w, b]
+            long[] gradPairs = g.addGradients(loss, 0, params);
+            long[] fetchOps = new long[1 + params.length]; // loss, dW, dB
+            int[] fetchIdx = new int[fetchOps.length];
+            fetchOps[0] = loss;
+            for (int i = 0; i &lt; params.length; i++) {
+                fetchOps[1 + i] = gradPairs[2 * i];
+                fetchIdx[1 + i] = (int) gradPairs[2 * i + 1];
+            }
+
+            // ---------- hand-rolled training loop ----------------------
+            try (Optimizer opt = Optimizer.sgd(0.02f);
+                 NativeSession sess = g.newSession()) {
+                opt.init(gb.paramShapes());
+
+                // training feeds x, y and both parameters; Sgd updates the
+                // parameter tensors IN PLACE, so handles stay valid.
+                long[] trainFeeds = new long[2 + params.length];
+                int[] feedIdx = new int[trainFeeds.length];
+                long[] trainTs = new long[trainFeeds.length];
+                trainFeeds[0] = xPh;
+                trainFeeds[1] = yPh;
+                System.arraycopy(params, 0, trainFeeds, 2, params.length);
+                System.arraycopy(gb.paramTensors(), 0, trainTs, 2,
+                        params.length);
+
+                for (int step = 1; step &lt;= 800; step++) {
+                    long xT = NativeTF.allocTensorF32(new long[]{n, 1}, X);
+                    long yT = NativeTF.allocTensorF32(new long[]{n, 1}, Y);
+                    trainTs[0] = xT;
+                    trainTs[1] = yT;
+
+                    long[] got = sess.run(trainFeeds, feedIdx, trainTs,
+                            fetchOps, fetchIdx);
+                    float mse = NativeTF.tensorDataF32(got[0])[0];
+                    if (step == 1 || step % 200 == 0) {
+                        System.out.printf("step %3d  mse %.5f%n", step, mse);
+                    }
+                    opt.apply(gb.paramTensors(),
+                            Arrays.copyOfRange(got, 1, got.length));
+                    for (long t : got) NativeTF.deleteTensor(t);
+                    NativeTF.deleteTensor(xT);
+                    NativeTF.deleteTensor(yT);
+                }
+
+                float wv = NativeTF.tensorDataF32(gb.paramTensors()[0])[0];
+                float bv = NativeTF.tensorDataF32(gb.paramTensors()[1])[0];
+                System.out.printf(
+                        "learned y = %.3fx + %.3f   (true 3.000x - 2.000)%n",
+                        wv, bv);
+
+                // ---------- inference: fetch pred (y never fed here) ---
+                float[] probe = {-3f, 0f, 4f};
+                long[] probeFeeds = new long[1 + params.length];
+                int[] probeIdx = new int[probeFeeds.length];
+                long[] probeTs = new long[probeFeeds.length];
+                probeFeeds[0] = xPh;
+                System.arraycopy(params, 0, probeFeeds, 1, params.length);
+                System.arraycopy(gb.paramTensors(), 0, probeTs, 1,
+                        params.length);
+                long pT = NativeTF.allocTensorF32(
+                        new long[]{probe.length, 1}, probe);
+                probeTs[0] = pT;
+
+                long[] out = sess.run(probeFeeds, probeIdx, probeTs,
+                        new long[]{pred}, new int[]{0});
+                float[] pv = NativeTF.tensorDataF32(out[0]);
+                for (int i = 0; i &lt; probe.length; i++) {
+                    System.out.printf(
+                            "x=%+.0f -&gt; predicted %+.3f (true %+.1f)%n",
+                            probe[i], pv[i], 3 * probe[i] - 2);
+                }
+                NativeTF.deleteTensor(pT);
+                NativeTF.deleteTensor(out[0]);
+            }
+        }
+    }
+
+    private GraphLinearRegressionDemo() {}
+}</code></pre>
+        <p>Actual output of this class:</p>
+        <pre>step   1  mse 14.59917
+step 200  mse 0.09329
+step 400  mse 0.09329
+step 600  mse 0.09329
+step 800  mse 0.09329
+learned y = 3.005x + -2.010   (true 3.000x - 2.000)
+x=-3 -> predicted -11.026 (true -11.0)
+x=+0 -> predicted -2.010 (true -2.0)
+x=+4 -> predicted +10.012 (true +10.0)</pre>
+        <p>Three lessons baked into this example:</p>
+        <ul>
+            <li><strong>Reduction axes gotcha:</strong> a reduction op's axes
+                constant must carry the axis VALUE (<code>values {0}</code>,
+                empty shape). Passing an empty int tensor silently disables
+                the reduction - gradients then blow up ~n&times;.</li>
+            <li><strong>In-place parameters:</strong> SGD mutates the registered
+                tensors directly, so feed arrays keep working without refresh;
+                fetched loss/gradient tensors must be deleted each step.</li>
+            <li><strong>Feed only what a fetch needs:</strong> inference fetches
+                <code>pred</code>, so the probe run feeds just
+                <code>x</code> plus parameters - never feed stale tensor
+                handles.</li>
+        </ul>
+        <p>In practice you rarely re-derive this loop -
+        <code>Sequential</code>/<code>Regressor</code> already implement it -
+        but the same three ingredients (placeholders &rarr; ops &rarr;
+        <code>addGradients</code>) extend to any architecture or loss the
+        built-in models cannot express.</p>
+
+        <h2>5. When to Reach for GraphBuilder</h2>
+        <ul>
+            <li>You need a <strong>custom loss</strong> not covered by
+                cross-entropy/MSE (Huber, quantile, contrastive...).</li>
+            <li>You need an <strong>op combination</strong> that no layer
+                provides (e.g. a specific attention variant).</li>
+            <li>You are <strong>prototyping numerics</strong> without wanting
+                to touch the library itself.</li>
+            <li>Otherwise: prefer composing existing layers - it is less code
+                and gets checkpointing for free.</li>
+        </ul>
+
+        <h2>6. Summary</h2>
+        <ul>
+            <li><code>GraphBuilder</code> = op factory + parameter registry +
+                unique namer over one <code>NativeGraph</code></li>
+            <li>Seeded constructor makes init reproducible</li>
+            <li><code>glorot/zeros/ones</code> param helpers cover layer
+                weight conventions</li>
+            <li><code>graph.addGradients(loss, 0, paramOps)</code> wires any
+                differentiable graph into training</li>
+        </ul>
+    </div>
+</div>
+</body>
+</html>

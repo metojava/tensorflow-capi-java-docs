@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP - Natural Language Processing</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #eef2f7; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html" class="active">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Natural Language Processing</h1>
+
+        <p>This page covers the complete NLP toolbox of the library: the text
+        pipeline, the <code>Embedding</code> layer, the recurrent family
+        (<code>RNN</code>, <code>LSTM</code>, <code>GRU</code>) down to the
+        actual gate equations, and how to assemble an
+        <strong>encoder&ndash;decoder</strong> model despite the API's
+        constraints.</p>
+
+        <h2 id="pipeline">1. The Text Pipeline</h2>
+        <p>Every NLP project here follows five steps - all plain Java, no
+        tokenizers to download:</p>
+        <pre><code>// 1. tokenize: lowercase, strip punctuation, split on whitespace
+List&lt;String&gt; tokens = List.of(clean.split("\\s+"));
+
+// 2. vocabulary built on TRAINING texts only (leakage hygiene!)
+Map&lt;String, Integer&gt; vocab = new HashMap&lt;&gt;();
+vocab.put("&lt;UNK&gt;", 0);          // unknown words
+vocab.put("&lt;PAD&gt;", 1);          // padding slot
+// ...then corpus words by descending frequency: 2, 3, 4...
+</code></pre>
+        <p><strong>Special tokens:</strong> only <code>&lt;UNK&gt;</code> and
+        <code>&lt;PAD&gt;</code> are reserved by convention - the library needs
+        nothing else because its models read fixed-length windows and classify
+        or transduce. Tasks that want more markers simply extend the block
+        before corpus words (<code>&lt;BOS&gt;=2</code>,
+        <code>&lt;EOS&gt;=3</code>, real words from 4 on); layers treat them as
+        ordinary ids.</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Token</th>
+                <th style="padding: 8px;">Typical id</th>
+                <th style="padding: 8px;">What it means / when it appears</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>&lt;UNK&gt;</code></td>
+                <td style="padding: 8px;">0</td>
+                <td style="padding: 8px;"><strong>Unknown word.</strong> Any
+                    token that is not in the training vocabulary maps here -
+                    guarantees every word gets a valid id even when new words
+                    show up at test time.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>&lt;PAD&gt;</code></td>
+                <td style="padding: 8px;">1</td>
+                <td style="padding: 8px;"><strong>Padding.</strong> Fills the
+                    tail of shorter sequences so every sample has exactly T
+                    positions - tensors must be rectangular.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>&lt;BOS&gt;</code></td>
+                <td style="padding: 8px;">2 (optional)</td>
+                <td style="padding: 8px;"><strong>Begin of sequence.</strong>
+                    Start symbol fed before the first real token - needed by
+                    step-by-step decoders that must generate a first output
+                    from something.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;"><code>&lt;EOS&gt;</code></td>
+                <td style="padding: 8px;">3 (optional)</td>
+                <td style="padding: 8px;"><strong>End of sequence.</strong>
+                    Marks where a sequence should stop - used when decoding
+                    variable-length outputs instead of fixed T.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">corpus words</td>
+                <td style="padding: 8px;">next ids upward</td>
+                <td style="padding: 8px;">Real vocabulary entries assigned by
+                    descending frequency; the id doubles as the embedding row /
+                    one-hot column index for that word.</td>
+            </tr>
+        </table>
+        <pre><code>// 3-4. encode to ids, truncate or right-pad to fixed length T
+int[] ids = new int[T];
+Arrays.fill(ids, PAD);
+for (int t = 0; t &lt; Math.min(tokens.size(), T); t++)
+    ids[t] = vocab.getOrDefault(tokens.get(t), UNK);
+
+// 5. feed as floats - the layers read token ids from float arrays
+float[] x = new float[sentences * T];
+x[row * T + t] = ids[t];</code></pre>
+        <p>Worked examples: Tutorial 7 (sentiment) and
+        <a href="projects/tutorials/news-topic-classifier.html">Tutorial 13
+        (news topics)</a>.</p>
+
+        <h2 id="embedding">2. Embedding Layers</h2>
+        <pre><code>new Input3D(T, 1),           // token ids as floats, one per step
+new Embedding(vocabSize, 16) // flattened:  [B, T*16] - feeds Dense heads
+new EmbeddingND(vocab, 16)   // kept: [B, T, 16] - feeds LSTM/attention</code></pre>
+        <ul>
+            <li><strong>Mechanics:</strong> the lookup is realized as a
+                one-hot MatMul (<code>onehot(ids) &middot; E</code>) instead of
+                <code>GatherV2</code>, chosen because its gradient is a dense
+                tensor that the generic <code>TF_AddGradients</code> fetch path
+                handles without IndexedSlices conversion.</li>
+            <li><strong>Two output flavors:</strong> the classic
+                <code>Embedding</code> flattens to
+                <code>[batch, T*embDim]</code> (bag-of-embeddings for Dense
+                heads); <code><a href="advanced-layers.html#embeddingnd">EmbeddingND</a></code>
+                keeps <code>[batch, T, embDim]</code> so embeddings can finally
+                feed recurrent and attention layers directly.</li>
+        </ul>
+
+        <h2 id="rnn-family">3. The Recurrent Family</h2>
+        <p>All three layers consume a rank-3 flow
+        <code>[batch, T, D]</code> declared by
+        <code>Input3D(T, D)</code>, are unrolled over the fixed T inside the
+        graph, train through native BPTT (TF autodiff across the unroll), and
+        emit the flattened states of every time step:
+        <code>[batch, T*H]</code>.</p>
+
+        <h3>3.1 Vanilla RNN</h3>
+        <pre><code>h[t] = tanh(x[t]&middot;Wx + h[t-1]&middot;Wh + b)</code></pre>
+        <p>One-line recurrence - great for teaching, but gradients vanish over
+        long T, so prefer LSTM/GRU for anything real.</p>
+
+        <h3 id="lstm">3.2 LSTM (Long Short-Term Memory)</h3>
+        <p>An LSTM keeps two things per step: the exposed state
+        <code>h[t]</code> and a cell state <code>c[t]</code> acting as
+        long-term memory. Three sigmoid gates decide what to forget, write and
+        reveal:</p>
+        <pre><code>a = x[t]&middot;W + h[t-1]&middot;U + b        // W:[D,4H]  U:[H,4H]  b:[4H]
+                                  // one big matmul, then carved into quarters
+f = sigmoid(a[0:H])               // FORGET gate: keep old memory?
+i = sigmoid(a[H:2H])              // INPUT gate:  write new memory?
+o = sigmoid(a[2H:3H])             // OUTPUT gate: expose how much?
+g = tanh(a[3H:4H])                // candidate content
+
+c[t] = f &isin; c[t-1] + i &isin; g       // cell state = remembered + new
+h[t] = o &isin; tanh(c[t])             // exposed state</code></pre>
+        <ul>
+            <li>The additive cell path (<code>c[t-1] &times; f</code>) lets
+                gradients flow across many steps without vanishing - this is
+                what makes LSTMs able to learn long-range dependencies.</li>
+            <li>Usage: <code>new Input3D(T, D)</code> &rarr;
+                <code>new LSTM(H)</code> &rarr; Dense head.</li>
+            <li>Cost: four H-wide gate computations per step; roughly 4&times;
+                a vanilla RNN of the same H.</li>
+        </ul>
+
+        <h3 id="gru">3.3 GRU (Gated Recurrent Unit)</h3>
+        <pre><code>z[t] = sigmoid(x&middot;Wz + h'&middot;Uz + bz)      // UPDATE gate
+r[t] = sigmoid(x&middot;Wr + h'&middot;Ur + br)      // RESET gate
+c[t] = tanh(x&middot;Wc + (r &isin; h')&middot;Uc + bc)  // candidate
+
+h[t] = (1 - z) &isin; h' + z &isin; c[t]         // blend old and new</code></pre>
+        <p>No separate cell state, two gates instead of three, ~25% fewer
+        parameters than an LSTM of equal H. Rule of thumb: try GRU first on
+        small/medium data; switch to LSTM only if quality lags.</p>
+
+        <h3>3.4 Choosing the input encoding</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Encoding</th>
+                <th style="padding: 8px;">Flow</th>
+                <th style="padding: 8px;">Pros / cons</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Token ids + Embedding</td>
+                <td style="padding: 8px;"><code>Input3D(T,1)</code></td>
+                <td style="padding: 8px;">Compact, learned vectors - but output
+                    is flattened, so recurrent layers can't follow it.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">One-hot token planes</td>
+                <td style="padding: 8px;"><code>Input3D(T,V)</code></td>
+                <td style="padding: 8px;">Feeds RNN/LSTM/GRU directly; V&times;
+                    more floats per sample - fine up to a few thousand
+                    vocab entries.</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Raw features per step</td>
+                <td style="padding: 8px;"><code>Input3D(T,D)</code>, D small</td>
+                <td style="padding: 8px;">Time series / sensor windows (e.g.
+                    airline-lstm).</td>
+            </tr>
+        </table>
+
+        <h2 id="encoderdecoder">4. Building an Encoder&ndash;Decoder</h2>
+        <p>A classic seq2seq has an encoder reading the source sequence and a
+        decoder emitting a target sequence. Two honest ways to get that
+        behavior with this API:</p>
+
+        <h3>4.1 Pattern A - single-model transducer (recommended)</h3>
+        <p>The LSTM acts as the encoder; a linear <code>Dense(T*V)</code> head
+        produces the ENTIRE target sequence at once as flat scores, decoded by
+        per-step argmax. Trained with <code>Regressor</code> because targets
+        are float one-hot planes, not class ids:</p>
+        <pre><code>// task example: reverse a digit sequence (T=8, V=10)
+try (Regressor net = new Regressor(Optimizer.adam(0.01f), 42L,
+        new Input3D(8, 10),                 // source one-hot planes
+        new LSTM(48),                       // encoder
+        new Dense(8 * 10))) {               // dense decoder head
+
+    net.setShuffleSeed(42L);
+    net.fit(trainX, trainY, 120, 32);       // trainY: reversed one-hot flats
+
+    float[] out = net.predict(testX);       // [rows, 80] scores
+    // decode: argmax over each block of V
+}</code></pre>
+        <p>This exact model was verified end-to-end: after 120 epochs it
+        reverses unseen digit sequences with <strong>100% exact-sequence
+        accuracy</strong>:</p>
+        <pre>input    : 5 9 0 2 8 0 8 2
+target   : 2 8 0 8 2 0 9 5
+predicted: 2 8 0 8 2 0 9 5</pre>
+        <p>Works whenever the target length is fixed (reversal, sorting short
+        sequences, normalization maps, slot-filling). The dense decoder ignores
+        target-side order during decoding - each output position is produced
+        independently - so pure generation tasks need Pattern B or more layers
+        than this API currently offers.</p>
+
+        <h3>4.2 Pattern B - two stages connected through Java</h3>
+        <pre><code>// stage 1: encoder compresses variable text into latent codes
+try (Regressor enc = new Regressor(adam, seed,
+        new Input3D(T, V), new LSTM(H),
+        new Dense(LATENT))) { /* train autoencoder-style first */ }
+
+// stage 2: decoder predicts the next item from latent + position
+try (Regressor dec = new Regressor(adam, seed,
+        new Input(LATENT + CONTEXT), new Dense(...), new ReLU(),
+        new Dense(V))) { /* train on teacher-forced pairs */ }</code></pre>
+        <p>The handoff happens in Java: run the encoder, copy its output into
+        the decoder's input rows. Because gradients do not flow across the
+        boundary, train stage 1 reconstruction-first (autoencoder objective),
+        then freeze it and fit stage 2 - the same two-phase idea as
+        <a href="training.html#freezing">layer freezing</a>.</p>
+
+        <h3>4.3 What is NOT possible today</h3>
+        <ul>
+            <li><strong>Self-attention IS available</strong>: the
+                <code><a href="advanced-layers.html#selfattention">SelfAttention</a></code>
+                layer mixes positions pairwise on any
+                <code>[B,T,D]</code> flow - place it before the recurrent or
+                flatten stage. What remains out of reach:</li>
+            <li>Cross-attention between encoder and decoder states - two flows,
+                but <code>Layer.build</code> receives one; assemble it by hand
+                with <a href="graph-builder.html">GraphBuilder</a>.</li>
+            <li>LSTM hidden/cell states are internal to the graph - they cannot
+                be passed between two models, hence the Java-side handoff
+                above.</li>
+            <li>No pretrained model loading (no SavedModel import of BERT/GPT
+                embeddings) - everything trains from scratch.</li>
+        </ul>
+
+        <h2>5. NLP Task Cheat Sheet</h2>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Task</th>
+                <th style="padding: 8px;">Architecture</th>
+                <th style="padding: 8px;">Example</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Sentiment / topic classification</td>
+                <td style="padding: 8px;"><code>Embedding</code> + Dense head
+                    (or one-hot + LSTM when order matters)</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/sentiment-analyzer.html">sentiment-analyzer</a>,
+                    <a href="projects/tutorials/news-topic-classifier.html">news-topic-classifier</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Time-series forecasting</td>
+                <td style="padding: 8px;"><code>Input3D(window, features)</code>
+                    &rarr; <code>LSTM</code>/<code>GRU</code> &rarr; Dense</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/airline-lstm.html">airline-lstm</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Fixed-length sequence mapping</td>
+                <td style="padding: 8px;">Pattern A transducer
+                    (<code>Regressor</code> + dense decoder)</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/sequence-transducer.html">sequence-transducer</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Translation (lexical + reorder)</td>
+                <td style="padding: 8px;">Pattern A on a parallel corpus</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/toy-translator.html">toy-translator</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Text generation (char-level LM)</td>
+                <td style="padding: 8px;">Next-char classification +
+                    temperature sampling</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/char-lm-text-generator.html">char-lm-text-generator</a></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Sequence compression</td>
+                <td style="padding: 8px;">LSTM autoencoder (Pattern B stage 1)</td>
+                <td style="padding: 8px;"><a href="projects/tutorials/autoencoder-small-images.html">autoencoder pattern, applied to text</a></td>
+            </tr>
+        </table>
+
+        <h2>6. Practical Tips</h2>
+        <ul>
+            <li>Keep training rows a multiple of the batch size - packed batch
+                buffers assume uniform shapes.</li>
+            <li>Start Adam at 0.01, add <code>EarlyStopping.valLoss</code>;
+                recurrent nets plateau visibly.</li>
+            <li>One-hot planes blow up quickly: V=2k tokens &times; T=30 steps
+                &times; batch 32 is already ~8 MB per batch - trim the
+                vocabulary before widening the net.</li>
+            <li>For classification heads remember the last layer is
+                <code>Dense(numClasses)</code> - cross-entropy applies softmax
+                internally; don't add a Softmax layer.</li>
+        </ul>
+    </div>
+</div>
+</body>
+</html>

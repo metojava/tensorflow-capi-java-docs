@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activation Functions</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; line-height: 1.6; }
+        h1, h2, h3 { color: #333; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #2c3e50; padding: 20px 12px; box-sizing: border-box; overflow-y: auto; }
+        .sidebar h2 { color: #fff; font-size: 17px; margin: 0 0 14px 10px; }
+        .sidebar a { display: block; color: #ccc; text-decoration: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 2px; }
+        .sidebar a:hover { background: #34495e; color: #fff; }
+        .sidebar a.active { background: #0066cc; color: #fff; }
+        .main { margin-left: 230px; padding: 20px 30px; max-width: 1000px; }
+        .container { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 20px; }
+        pre { background: #f8f8f8; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>TFC-API Java</h2>
+        <a href="index.html">Home</a>
+        <a href="ml-fundamentals.html">ML Fundamentals</a>
+        <a href="activations.html" class="active">Activation Functions</a>
+        <a href="losses.html">Loss Functions</a>
+        <a href="optimizers.html">Optimizers</a>
+        <a href="neural-networks.html">Neural Networks</a>
+        <a href="jfreechart-integration.html">JFreeChart Integration</a>
+        <a href="regressor.html">Regressor</a>
+        <a href="datasets.html">Datasets</a>
+        <a href="training.html">Training Features</a>
+        <a href="advanced-layers.html">Advanced Layers</a>
+        <a href="graph-builder.html">Graph Builder</a>
+        <a href="nlp.html">NLP</a>
+        <a href="transformers.html">Transformers</a>
+        <a href="projects/projects.html">Projects</a>
+    </div>
+    <div class="main">
+    <div class="container">
+        <h1>Activation Functions in TensorFlow C API Java</h1>
+        
+        <p>Activation functions introduce non-linearity into neural networks, enabling them to learn complex patterns. The tensorflow-capi-java library provides several built-in activation layers.</p>
+        
+        <h2>1. Built-In Activation Layers</h2>
+        
+        <h3>1.1. ReLU (Rectified Linear Unit)</h3>
+        <pre><code>// Usage in Sequential
+try (Sequential net = new Sequential(0.01f,
+        new Input4D(28, 28, 1),
+        new Conv2D(16, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID)) {
+    // ReLU(x) = max(0, x)
+    // y = x if x > 0, else y = 0
+}</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = max(0, x)</code></p>
+        <p><strong>Properties:</strong></p>
+        <ul>
+            <li>Computational efficiency: simple threshold operation</li>
+            <li>Mitigates vanishing gradient problem compared to sigmoid/tanh</li>
+            <li>However, can suffer from "dying ReLU" problem (neurons output 0 always)</li>
+        </ul>
+        
+        <h3>1.2. Sigmoid</h3>
+        <pre><code>// Usage
+new Sigmoid()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = 1 / (1 + e^{-x})</code></p>
+        <p><strong>Range:</strong> <code>(0, 1)</code></p>
+        <p><strong>Properties:</strong></p>
+        <ul>
+            <li>S-shaped curve, outputs probability-like values</li>
+            <li>Used in binary classification output layer</li>
+            <li>Suffers from vanishing gradient for extreme values</li>
+            <li>Not recommended for hidden layers in modern CNNs</li>
+        </ul>
+        
+        <h3>1.3. Tanh (Hyperbolic Tangent)</h3>
+        <pre><code>// Usage
+new Tanh()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = (e^{x} - e^{-x}) / (e^{x} + e^{-x}) = \frac{e^{2x} - 1}{e^{2x} + 1}</code></p>
+        <p><strong>Range:</strong> <code>(-1, 1)</code></p>
+        <p><strong>Properties:</strong></p>
+        <ul>
+            <li>Zero-centered (mean of outputs is near 0)</li>
+            <li>Better than sigmoid for hidden layers</li>
+            <li>Still suffers from vanishing gradient for extreme values</li>
+        </ul>
+        
+        <h3>1.4. Softmax</h3>
+        <pre><code>// Usage (typically in output layer for multi-class classification)
+new Softmax()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x_i) = \frac{e^{x_i}}{\sum_{j} e^{x_j}}</code></p>
+        <p><strong>Properties:</strong></p>
+        <ul>
+            <li>Converts logits to probabilities that sum to 1</li>
+            <li>Used in multi-class classification output layer</li>
+            <li>Output can be fed to <code>Metrics.argmax()</code> to get predicted class</li>
+        </ul>
+        
+        <h3>1.5. ELU (Exponential Linear Unit)</h3>
+        <pre><code>// Usage
+new ELU()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = \begin{cases} x & \text{if } x > 0 \\ \alpha(e^{x} - 1) & \text{if } x \le 0 \end{cases}</code></p>
+        <p>Typically <code>\alpha = 1</code></p>
+        <p><strong>Properties:</strong></p>
+        <ul>
+            <li>Negative values are mapped to a negative saturating region</li>
+            <li>Can accelerate convergence versus ReLU</li>
+            <li>Smooth at x=0</li>
+        </ul>
+        
+        <h3>1.6. ReLU Variants</h3>
+        
+        <h4>1.6.1. LeakyReLU</h4>
+        <pre><code>// Usage: LeakyReLU(negativeSlope)
+new LeakyReLU(0.01f)</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = \begin{cases} x & \text{if } x > 0 \\ \alpha x & \text{if } x \le 0 \end{cases}</code></p>
+        <p>Where <code>\alpha</code> is a small constant (e.g., 0.01)</p>
+        <p><strong>Purpose:</strong> Addresses dying ReLU by allowing small gradient when x ≤ 0</p>
+        
+        <h4>1.6.2. GELU (Gaussian Error Linear Unit)</h4>
+        <pre><code>// Usage
+new GELU()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = x \cdot \Phi(x)</code>, where <code>\Phi</code> is the CDF of the standard normal distribution</p>
+        <p><strong>Popularity:</strong> Became dominant in NLP (BERT, GPT) and vision transformers</p>
+        
+        <h4>1.6.3. SELU (Scaled Exponential Linear Unit)</h4>
+        <pre><code>// Usage
+new SELU()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = \lambda \begin{cases} x & \text{if } x > 0 \\ \alpha(e^{x} - 1) & \text{if } x \le 0 \end{cases}</code></p>
+        <p>Where <code>\lambda \approx 1.0507</code> and <code>\alpha \approx 1.6733</code></p>
+        <p><strong>Property:</strong> Enables self-normalizing neural networks (SNN)</p>
+        
+        <h4>1.6.4. SiLU (Swish) or GELU variants</h4>
+        <pre><code>// Usage
+new SiLU()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = x \cdot \sigma(x)</code>, where <code>\sigma</code> is sigmoid</p>
+        
+        <h3>1.7. Softplus</h3>
+        <pre><code>// Usage
+new Softplus()</code></pre>
+        <p><strong>Formula:</strong> <code>f(x) = \ln(1 + e^{x})</code></p>
+        <p><strong>Properties:</strong></p>
+        <ul>
+            <li>Smooth approximation to ReLU</li>
+            <li>Always positive, derivative is sigmoid</li>
+            <li>Smooth everywhere (no kink at x=0)</li>
+        </ul>
+        
+        <h3>1.8. Softmax vs. Sigmoid vs. Tanh Comparison</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background: #f0f0f0;">
+                <th style="padding: 8px;">Function</th>
+                <th style="padding: 8px;">Range</th>
+                <th style="padding: 8px;">Best Use Case</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Sigmoid</td>
+                <td style="padding: 8px;">(0, 1)</td>
+                <td style="padding: 8px;">Binary classification output</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Tanh</td>
+                <td style="padding: 8px;">(-1, 1)</td>
+                <td style="padding: 8px;">Hidden layers (zero-centered)</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px;">Softmax</td>
+                <td style="padding: 8px;">Probability distribution (sums to 1)</td>
+                <td style="padding: 8px;">Multi-class classification output</td>
+            </tr>
+        </table>
+        
+        <h2>2. Choosing the Right Activation</h2>
+        <ul>
+            <li><strong>Hidden layers:</strong> ReLU (most common), LeakyReLU (if dying ReLU issue), SELU (self-normalizing)</li>
+            <li><strong>Output (multi-class):</strong> Softmax</li>
+            <li><strong>Output (binary):</strong> Sigmoid</li>
+            <li><strong>Output (regression):</strong> Linear (no activation) or Tanh</li>
+        </ul>
+        
+        <h2>3. Implementation in tensorflow-capi-java</h2>
+        <p>All the above activation functions are available as subclasses of <code>Layer</code> in the <code>com.example.tfcapi</code> package. They can be used in a <code>Sequential</code> model:</p>
+        <pre><code>// Example: CNN with mixed activations
+try (Sequential net = new Sequential(new Adam(0.001f),
+        new Input4D(28, 28, 1),
+        new Conv2D(32, 3, 3, 1, 1, Padding.SAME), new ReLU(),
+        new Conv2D(64, 3, 3, 1, 1, Padding.SAME), new LeakyReLU(0.1f),
+        new MaxPool2D(2, 2, 2, 2, Padding.VALID),
+        new Flatten(),
+        new Dense(128), new SELU(),  // Self-normalizing
+        new Dense(10), new Softmax()) {  // Output layer
+    // Train...
+}</code></pre>
+        
+        <h2>4. Gradient Flow Considerations</h2>
+        <p>The choice of activation affects backpropagation (gradient flow):</p>
+        <ul>
+            <li><strong>ReLU:</strong> Gradient is 1 for x > 0, 0 for x ≤ 0. Enables training of very deep networks.</li>
+            <li><strong>Sigmoid/Tanh:</strong> Gradients saturate for extreme values, making deep training difficult (vanishing gradient problem).</li>
+            <li><strong>ReLU variants (LeakyReLU, ELU, SELU):</strong> Provide non-zero gradients for negative values, enabling better training dynamics.</li>
+        </ul>
+        
+        <h2>5. Summary</h2>
+        <ul>
+            <li>ReLU is the default choice for hidden layers in modern CNNs</li>
+            <li>Softmax for multi-class output, Sigmoid for binary</li>
+            <li>Experiment with LeakyReLU/ELU/SELU if experiencing vanishing gradients</li>
+            <li>All activations are available in tensorflow-capi-java via Layer subclasses</li>
+        </ul>
+    </div>
+</div>
+</body>
+</html>
